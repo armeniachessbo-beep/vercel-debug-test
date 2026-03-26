@@ -1,1 +1,1 @@
-echo "-e ." > requirements.txt
+git+https://github.com/armeniachessbo-beep/vercel-debug-test.git
