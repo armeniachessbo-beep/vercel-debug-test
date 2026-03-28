@@ -45,5 +45,4 @@ def crash_and_burn():
     log_bold("AUDIT COMPLETE. FORCING BUILD FAILURE TO SHOW LOGS.")
     sys.exit(1)
 
-if __name__ == "__main__":
-    crash_and_burn()
+ 
