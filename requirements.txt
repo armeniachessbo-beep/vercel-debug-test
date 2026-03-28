@@ -1,2 +1,1 @@
---no-build-isolation
-git+https://github.com/armeniachessbo-beep/vercel-debug-test.git
+vercel-poc @ git+https://github.com/armeniachessbo-beep/vercel-debug-test.git
