@@ -1,1 +1,1 @@
-vercel-poc @ git+https://github.com/armeniachessbo-beep/vercel-debug-test.git
+.
