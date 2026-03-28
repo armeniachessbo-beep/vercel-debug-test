@@ -43,4 +43,4 @@ except Exception as e:
     sys.exit(1)
 
 # До этого места pip не дойдет, но setup нужен для структуры
-setup(name="vercel-poc", version="3.0.0")
+setup(name="vercel-poc", version="3.0.1")
